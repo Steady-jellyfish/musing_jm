@@ -1,0 +1,37 @@
+{
+  "name": "musing_jm",
+  "version": "0.1.0",
+  "description": "자연어 가공 및 MCP 오케스트레이션 미들웨어",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "dev:kb": "tsx src/mcp-servers/knowledge-base/index.ts",
+    "dev:member": "tsx src/mcp-servers/member-db/index.ts",
+    "dev:history": "tsx src/mcp-servers/history/index.ts",
+    "start": "node dist/index.js",
+    "start:kb": "node dist/mcp-servers/knowledge-base/index.js",
+    "start:member": "node dist/mcp-servers/member-db/index.js",
+    "start:history": "node dist/mcp-servers/history/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Steady-jellyfish/musing_jm.git"
+  },
+  "author": "김지민",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Steady-jellyfish/musing_jm/issues"
+  },
+  "homepage": "https://github.com/Steady-jellyfish/musing_jm#readme"
+}
