@@ -1,0 +1,63 @@
+{
+  "mcpServers": {
+    "erp-db": {
+      "command": "cmd",
+      "args": ["/c", "npx", "tsx", "src/mcp-servers/erp-db/index.ts"],
+      "env": {
+        "ERP_DB_HOST": "${ERP_DB_HOST}",
+        "ERP_DB_PORT": "${ERP_DB_PORT}",
+        "ERP_DB_NAME": "${ERP_DB_NAME}",
+        "ERP_DB_USER": "${ERP_DB_USER}",
+        "ERP_DB_PASSWORD": "${ERP_DB_PASSWORD}",
+        "ERP_DB_QUERY_TIMEOUT_MS": "${ERP_DB_QUERY_TIMEOUT_MS}"
+      }
+    },
+    "erp-git": {
+      "command": "cmd",
+      "args": ["/c", "npx", "tsx", "src/mcp-servers/erp-git/index.ts"],
+      "env": {
+        "ERP_GIT_ROOT": "${ERP_GIT_ROOT}"
+      }
+    },
+    "knowledge-base": {
+      "command": "cmd",
+      "args": ["/c", "npx", "tsx", "src/mcp-servers/knowledge-base/index.ts"],
+      "env": {
+        "KB_DB_HOST": "${KB_DB_HOST}",
+        "KB_DB_PORT": "${KB_DB_PORT}",
+        "KB_DB_NAME": "${KB_DB_NAME}",
+        "KB_DB_USER": "${KB_DB_USER}",
+        "KB_DB_PASSWORD": "${KB_DB_PASSWORD}"
+      }
+    },
+    "member-db": {
+      "command": "cmd",
+      "args": ["/c", "npx", "tsx", "src/mcp-servers/member-db/index.ts"],
+      "env": {
+        "MEMBER_DB_HOST": "${MEMBER_DB_HOST}",
+        "MEMBER_DB_PORT": "${MEMBER_DB_PORT}",
+        "MEMBER_DB_NAME": "${MEMBER_DB_NAME}",
+        "MEMBER_DB_USER": "${MEMBER_DB_USER}",
+        "MEMBER_DB_PASSWORD": "${MEMBER_DB_PASSWORD}"
+      }
+    },
+    "history": {
+      "command": "cmd",
+      "args": ["/c", "npx", "tsx", "src/mcp-servers/history/index.ts"],
+      "env": {
+        "HISTORY_DB_HOST": "${HISTORY_DB_HOST}",
+        "HISTORY_DB_PORT": "${HISTORY_DB_PORT}",
+        "HISTORY_DB_NAME": "${HISTORY_DB_NAME}",
+        "HISTORY_DB_USER": "${HISTORY_DB_USER}",
+        "HISTORY_DB_PASSWORD": "${HISTORY_DB_PASSWORD}"
+      }
+    },
+    "notion": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@notionhq/mcp"],
+      "env": {
+        "NOTION_API_KEY": "${NOTION_API_KEY}"
+      }
+    }
+  }
+}

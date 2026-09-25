@@ -1,0 +1,47 @@
+{
+  "name": "musing_jm",
+  "version": "0.1.0",
+  "description": "자연어 가공 및 MCP 오케스트레이션 미들웨어",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "dev:test": "tsx src/dev-runner.ts",
+    "dev:kb": "tsx src/mcp-servers/knowledge-base/index.ts",
+    "dev:member": "tsx src/mcp-servers/member-db/index.ts",
+    "dev:history": "tsx src/mcp-servers/history/index.ts",
+    "dev:erp-git": "tsx src/mcp-servers/erp-git/index.ts",
+    "dev:erp-db": "tsx src/mcp-servers/erp-db/index.ts",
+    "start": "node dist/index.js",
+    "start:kb": "node dist/mcp-servers/knowledge-base/index.js",
+    "start:member": "node dist/mcp-servers/member-db/index.js",
+    "start:history": "node dist/mcp-servers/history/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@fastify/swagger": "^9.9.0",
+    "@fastify/swagger-ui": "^6.1.1",
+    "@fastify/type-provider-typebox": "^6.1.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@sinclair/typebox": "^0.34.52",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.12.5",
+    "mysql2": "^3.24.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Steady-jellyfish/musing_jm.git"
+  },
+  "author": "김지민",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Steady-jellyfish/musing_jm/issues"
+  },
+  "homepage": "https://github.com/Steady-jellyfish/musing_jm#readme"
+}
