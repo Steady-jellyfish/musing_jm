@@ -1,0 +1,8 @@
+[
+  {
+    "id": "erp",
+    "urlEnv": "ERP_GIT_URL",
+    "branchEnv": "ERP_GIT_BRANCH",
+    "description": "ERP 메인 저장소"
+  }
+]

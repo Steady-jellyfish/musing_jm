@@ -6,6 +6,7 @@ import { checkPermission } from "../../auth/permission.js";
 import { Orchestrator } from "../../orchestrator/index.js";
 import { OrchestratorError } from "../../orchestrator/types.js";
 import { mcpManager } from "../../orchestrator/mcp-client.js";
+import { repoSyncManager } from "../../git-sync/repo-manager.js";
 
 export const orchestrator = new Orchestrator();
 
@@ -29,6 +30,7 @@ export async function inquiryRoutes(app: FastifyInstance): Promise<void> {
       status: "ok" as const,
       timestamp: new Date().toISOString(),
       mcp: mcpManager.getStatuses(),
+      repos: repoSyncManager.getStatuses(),
     })
   );
 

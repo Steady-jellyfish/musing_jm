@@ -81,13 +81,13 @@ class McpClientManager {
     }> = [
       {
         name: "erp-git",
-        skipReason: env.erpGitRoot ? null : "ERP_GIT_ROOT 없음",
+        skipReason: process.env.ERP_GIT_URL ? null : "ERP_GIT_URL 없음",
         config: {
           command: isWin ? "cmd" : "npx",
           args: isWin
             ? ["/c", "npx", "tsx", "src/mcp-servers/erp-git/index.ts"]
             : ["tsx", "src/mcp-servers/erp-git/index.ts"],
-          env: { ERP_GIT_ROOT: env.erpGitRoot },
+          env: { ERP_GIT_CACHE_DIR: env.erpGitCacheDir },
         },
       },
       {

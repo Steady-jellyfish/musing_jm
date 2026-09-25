@@ -116,10 +116,27 @@ const McpServerStatusSchema = Type.Object({
   ),
 });
 
+const RepoStatusSchema = Type.Object({
+  id: Type.String({ description: "저장소 ID (config/repos.json의 id)" }),
+  description: Type.Optional(Type.String()),
+  status: Type.Union(
+    [
+      Type.Literal("syncing"),
+      Type.Literal("synced"),
+      Type.Literal("stale"),
+      Type.Literal("missing"),
+    ],
+    { description: "동기화 상태 (syncing: 진행 중, synced: 완료, stale: 캐시 사용 중, missing: URL 미설정)" }
+  ),
+  syncedAt: Type.Optional(Type.String({ description: "마지막 성공 동기화 시각 (ISO 8601)" })),
+  warning: Type.Optional(Type.String({ description: "경고 메시지 (stale/missing 시)" })),
+});
+
 export const HealthResponseSchema = Type.Object({
   status: Type.Literal("ok"),
   timestamp: Type.String(),
   mcp: Type.Array(McpServerStatusSchema, { description: "MCP 서버별 연결 상태" }),
+  repos: Type.Array(RepoStatusSchema, { description: "Git 저장소별 동기화 상태" }),
 });
 
 export type HealthResponse = Static<typeof HealthResponseSchema>;

@@ -13,7 +13,7 @@ export const env = {
 
   useMockContext: process.env.USE_MOCK_CONTEXT === "true",
 
-  erpGitRoot: process.env.ERP_GIT_ROOT ?? "",
+  erpGitCacheDir: process.env.ERP_GIT_CACHE_DIR ?? "./.cache/repos",
 
   erpDb: {
     host: process.env.ERP_DB_HOST ?? "localhost",

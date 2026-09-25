@@ -28,7 +28,7 @@ function extractReference(toolName: string, input: Record<string, unknown>): Ref
   if (toolName === "erp_git__readFileRange") {
     return {
       type: "CODE",
-      repo: "erp",
+      repo: String(input.repo ?? "erp"),  // tool의 repo 파라미터 값 사용
       path: String(input.path ?? ""),
       lineStart: Number(input.lineStart ?? 0),
       lineEnd: Number(input.lineEnd ?? 0),

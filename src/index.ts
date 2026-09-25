@@ -9,9 +9,14 @@
 import { buildApp } from "./server/app.js";
 import { orchestrator } from "./server/routes/inquiry.js";
 import { mcpManager } from "./orchestrator/mcp-client.js";
+import { repoSyncManager } from "./git-sync/repo-manager.js";
 import { env } from "./config/env.js";
 
 async function main() {
+  // Git 저장소 동기화 시작 (비동기, 서버 기동 차단 안 함)
+  // 첫 clone 포함 모든 작업이 백그라운드에서 진행됩니다.
+  await repoSyncManager.initialize();
+
   // MCP 서버 초기화 (erp-git, erp-db 연결)
   await orchestrator.initialize();
 
