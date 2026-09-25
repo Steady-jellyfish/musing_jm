@@ -6,6 +6,11 @@ export interface InquiryRequest {
   requestId: string;
   /** 회원사 식별자 */
   memberId: MemberId;
+  /**
+   * 대상 시스템 (예: "ERP", "CMS").
+   * memberId + targetSystem 조합으로 참조할 Git 저장소를 결정합니다.
+   */
+  targetSystem: string;
   /** 문의 유형 (Gateway가 1차 판별) */
   queryType: QueryType;
   /** 정제된 질의 */
