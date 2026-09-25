@@ -4,14 +4,10 @@ export type MemberId = string;
 /** 세션 ID (멀티턴 관리) */
 export type SessionId = string;
 
-/** 문의 유형 */
+/** 문의 유형 (Gateway가 1차 판별해서 전달) */
 export type QueryType =
-  | "fee_inquiry"       // 수수료 문의
-  | "cms_error"         // CMS 오류
-  | "contract_inquiry"  // 계약 조회
-  | "pkg_su_calc"       // PKG_SU_CALC 관련
-  | "issue_pattern"     // 이슈 패턴 분석
-  | "unknown";          // 판별 실패
+  | "LOGIC_CHECK"   // 로직 확인
+  | "REASON_CHECK"; // 사유 확인
 
 /** 지식베이스 카테고리 */
 export type KbCategory =
@@ -19,3 +15,33 @@ export type KbCategory =
   | "cms"
   | "pkg_su_calc"
   | "issue_pattern";
+
+/** 응답 상태 */
+export type ResponseStatus = "SUCCESS" | "FAILED" | "REJECTED";
+
+/** 참조 정보: 코드 */
+export interface CodeReference {
+  type: "CODE";
+  repo: string;
+  path: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+/** 참조 정보: DB 쿼리 */
+export interface DbReference {
+  type: "DB";
+  table: string;
+  query: string;
+}
+
+export type Reference = CodeReference | DbReference;
+
+/** 처리 메타 정보 */
+export interface ResponseMeta {
+  model: string;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  elapsedMs: number;
+}

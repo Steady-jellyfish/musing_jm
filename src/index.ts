@@ -1,33 +1,45 @@
-import "dotenv/config";
-import { classifyQuery } from "./preprocess/classifier.js";
-import { Orchestrator } from "./orchestrator/index.js";
-import type { RawInquiry } from "./preprocess/types.js";
-
 /**
- * 진입점 — 실제 운영 시 입출력 담당(한상민)으로부터 RawInquiry를 수신
- * 현재는 로컬 테스트용 예시 실행
+ * 애플리케이션 진입점 (Phase 5)
+ *
+ * 1. Orchestrator 초기화 (MCP 서버 연결)
+ * 2. Fastify 앱 시작
+ * 3. SIGINT/SIGTERM 핸들러로 graceful shutdown
  */
+
+import { buildApp } from "./server/app.js";
+import { orchestrator } from "./server/routes/inquiry.js";
+import { mcpManager } from "./orchestrator/mcp-client.js";
+import { env } from "./config/env.js";
+
 async function main() {
-  const orchestrator = new Orchestrator();
+  // MCP 서버 초기화 (erp-git, erp-db 연결)
+  await orchestrator.initialize();
 
-  // 테스트용 원시 문의
-  const testInquiry: RawInquiry = {
-    memberId: "MBR-001",
-    rawText: "12월 수수료가 너무 많이 나온 것 같아요. 확인 부탁드립니다.",
-  };
+  // Fastify 앱 생성 및 시작
+  const app = await buildApp();
 
-  console.log("[main] 원시 문의 수신:", testInquiry);
+  try {
+    await app.listen({ port: env.port, host: "0.0.0.0" });
+    process.stderr.write(`INFO [server] http://0.0.0.0:${env.port} 에서 수신 중\n`);
+    process.stderr.write(`INFO [server] Swagger UI: http://localhost:${env.port}/docs\n`);
+  } catch (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
 
-  // 1. 유형 판별
-  const classified = await classifyQuery(testInquiry);
-  console.log("[main] 유형 판별 결과:", classified);
+  // Graceful shutdown
+  async function shutdown(signal: string) {
+    process.stderr.write(`\nINFO [server] ${signal} 수신 — 서버를 종료합니다.\n`);
+    await app.close();
+    await mcpManager.close();
+    process.exit(0);
+  }
 
-  // 2. 오케스트레이션 (컨텍스트 수집 → 프롬프트 조립 → Claude 호출)
-  const result = await orchestrator.process(classified);
-  console.log("[main] 최종 결과:", JSON.stringify(result, null, 2));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
 main().catch((err) => {
-  console.error("[main] 오류:", err);
+  console.error("서버 시작 실패:", err);
   process.exit(1);
 });

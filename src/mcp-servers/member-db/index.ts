@@ -1,118 +1,144 @@
+/**
+ * member-db MCP 서버 (Mock)
+ *
+ * 회원사 정보 및 권한 확인을 제공합니다.
+ * Phase 2: checkPermission 도구 추가 (auth/permission.ts와 동일 로직)
+ *
+ * 실행: npx tsx src/mcp-servers/member-db/index.ts
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-// ── Mock 데이터 ──────────────────────────────────────────
-const mockMemberDb: Record<
-  string,
-  {
-    memberId: string;
-    companyName: string;
-    contract: Record<string, unknown>;
-    org: Record<string, unknown>;
-    hr: Record<string, unknown>;
-  }
-> = {
-  "MBR-001": {
-    memberId: "MBR-001",
-    companyName: "(주)샘플기업",
-    contract: {
-      contractId: "CTR-2024-001",
-      status: "active",
-      plan: "enterprise",
-      startDate: "2024-01-01",
-      endDate: "2025-12-31",
-      monthlyFeeLimit: 5000000,
-      discountRate: 0.1,
-    },
-    org: {
-      department: "재무팀",
-      contactName: "홍길동",
-      contactEmail: "hong@sample.com",
-    },
-    hr: {
-      employeeCount: 250,
-      tier: "large",
-    },
-  },
-  "MBR-002": {
-    memberId: "MBR-002",
-    companyName: "(주)테스트컴퍼니",
-    contract: {
-      contractId: "CTR-2024-042",
-      status: "active",
-      plan: "standard",
-      startDate: "2024-06-01",
-      endDate: "2025-05-31",
-      monthlyFeeLimit: 1000000,
-      discountRate: 0,
-    },
-    org: {
-      department: "경영지원팀",
-      contactName: "김철수",
-      contactEmail: "kim@test.com",
-    },
-    hr: {
-      employeeCount: 50,
-      tier: "medium",
-    },
-  },
-};
+// ── Mock 데이터 ───────────────────────────────────────────
 
-// ── MCP 서버 정의 (read-only) ────────────────────────────
+interface MemberInfo {
+  memberId: string;
+  name: string;
+  status: "active" | "inactive";
+  contractStart: string;
+  allowedRoles: string[];
+}
+
+const MEMBERS: MemberInfo[] = [
+  {
+    memberId: "HANWHA_LIFELAB",
+    name: "한화라이프랩",
+    status: "active",
+    contractStart: "2024-01-01",
+    allowedRoles: ["admin", "developer", "operator", "manager", "analyst"],
+  },
+  {
+    memberId: "MBR-001",
+    name: "테스트 회원사 A",
+    status: "active",
+    contractStart: "2024-03-15",
+    allowedRoles: ["admin", "developer", "operator", "manager"],
+  },
+  {
+    memberId: "MBR-002",
+    name: "테스트 회원사 B",
+    status: "inactive",
+    contractStart: "2023-06-01",
+    allowedRoles: ["admin", "manager"],
+  },
+];
+
+const memberMap = new Map(MEMBERS.map((m) => [m.memberId, m]));
+
+// ── MCP 서버 ──────────────────────────────────────────────
+
 const server = new McpServer({
-  name: "member-db-mcp",
-  version: "0.1.0",
+  name: "member-db",
+  version: "1.0.0",
 });
 
-/**
- * 회원사 기본 정보 조회 (read-only)
- */
+/** 회원사 정보 조회 */
 server.tool(
   "getMemberInfo",
-  "회원사 ID로 계약/조직/인사 정보를 조회합니다. 조회 전용(read-only)입니다.",
-  {
-    memberId: z.string().describe("회원사 식별자 (예: MBR-001)"),
-    fields: z
-      .array(z.enum(["contract", "org", "hr"]))
-      .default(["contract", "org"])
-      .describe("조회할 정보 필드"),
-  },
-  async ({ memberId, fields }) => {
-    const member = mockMemberDb[memberId];
-
+  "회원사 ID로 회원사 정보를 조회합니다.",
+  { memberId: z.string().describe("회원사 식별자") },
+  async ({ memberId }) => {
+    const member = memberMap.get(memberId);
     if (!member) {
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ error: `회원사 ID '${memberId}'를 찾을 수 없습니다.` }),
-          },
-        ],
-        isError: true,
+        content: [{ type: "text", text: JSON.stringify({ found: false, memberId }) }],
       };
     }
-
-    const result: Record<string, unknown> = {
-      memberId: member.memberId,
-      companyName: member.companyName,
-    };
-
-    for (const field of fields) {
-      result[field] = member[field];
-    }
-
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(result, null, 2),
+          text: JSON.stringify({
+            found: true,
+            memberId: member.memberId,
+            name: member.name,
+            status: member.status,
+            contractStart: member.contractStart,
+          }),
         },
       ],
     };
   }
 );
 
-// ── 서버 시작 ────────────────────────────────────────────
+/** 권한 확인 */
+server.tool(
+  "checkPermission",
+  "회원사 ID와 역할(role)이 해당 기능 사용 권한을 갖는지 확인합니다.",
+  {
+    memberId: z.string().describe("회원사 식별자"),
+    role: z.string().describe("요청자 역할"),
+  },
+  async ({ memberId, role }) => {
+    const member = memberMap.get(memberId);
+    if (!member) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              allowed: false,
+              reason: `회원사 '${memberId}'가 존재하지 않습니다.`,
+            }),
+          },
+        ],
+      };
+    }
+
+    if (member.status !== "active") {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              allowed: false,
+              reason: `회원사 '${memberId}'의 계약이 비활성 상태입니다.`,
+            }),
+          },
+        ],
+      };
+    }
+
+    const allowed = member.allowedRoles.includes(role);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            allowed,
+            reason: allowed
+              ? undefined
+              : `역할 '${role}'은 허용되지 않습니다. 허용 역할: ${member.allowedRoles.join(", ")}`,
+          }),
+        },
+      ],
+    };
+  }
+);
+
+// ── 시작 ──────────────────────────────────────────────────
+
 const transport = new StdioServerTransport();
 await server.connect(transport);

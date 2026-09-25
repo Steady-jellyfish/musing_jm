@@ -1,5 +1,24 @@
 {
   "mcpServers": {
+    "erp-db": {
+      "command": "cmd",
+      "args": ["/c", "npx", "tsx", "src/mcp-servers/erp-db/index.ts"],
+      "env": {
+        "ERP_DB_HOST": "${ERP_DB_HOST}",
+        "ERP_DB_PORT": "${ERP_DB_PORT}",
+        "ERP_DB_NAME": "${ERP_DB_NAME}",
+        "ERP_DB_USER": "${ERP_DB_USER}",
+        "ERP_DB_PASSWORD": "${ERP_DB_PASSWORD}",
+        "ERP_DB_QUERY_TIMEOUT_MS": "${ERP_DB_QUERY_TIMEOUT_MS}"
+      }
+    },
+    "erp-git": {
+      "command": "cmd",
+      "args": ["/c", "npx", "tsx", "src/mcp-servers/erp-git/index.ts"],
+      "env": {
+        "ERP_GIT_ROOT": "${ERP_GIT_ROOT}"
+      }
+    },
     "knowledge-base": {
       "command": "cmd",
       "args": ["/c", "npx", "tsx", "src/mcp-servers/knowledge-base/index.ts"],
@@ -31,6 +50,13 @@
         "HISTORY_DB_NAME": "${HISTORY_DB_NAME}",
         "HISTORY_DB_USER": "${HISTORY_DB_USER}",
         "HISTORY_DB_PASSWORD": "${HISTORY_DB_PASSWORD}"
+      }
+    },
+    "notion": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@notionhq/mcp"],
+      "env": {
+        "NOTION_API_KEY": "${NOTION_API_KEY}"
       }
     }
   }

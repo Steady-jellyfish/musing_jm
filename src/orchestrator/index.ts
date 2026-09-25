@@ -1,107 +1,196 @@
-import { randomUUID } from "crypto";
-import type {
-  GatheredContext,
-  IOrchestrator,
-  OrchestratorResult,
-  StructuredPrompt,
-} from "./types.js";
-import type { ClassifiedQuery } from "../preprocess/types.js";
-import type { SessionId } from "../config/types.js";
-import { buildStructuredPrompt } from "./prompt-builder.js";
-
 /**
- * 오케스트레이터 구현체
+ * Orchestrator (Phase 5)
  *
- * TODO: 실제 MCP 클라이언트 연결 및 Claude API 호출 구현
+ * Claude API를 실제로 호출하고 tool_use 루프를 통해 ERP Git/DB 도구를 사용합니다.
+ * 최종 텍스트 답변과 references(CODE/DB)를 반환합니다.
  */
-export class Orchestrator implements IOrchestrator {
-  async process(classifiedQuery: ClassifiedQuery): Promise<OrchestratorResult> {
-    const sessionId = randomUUID();
 
-    // Step 1: 컨텍스트 수집 (MCP 서버 호출)
-    const context = await this.gatherContext(classifiedQuery);
+import Anthropic from "@anthropic-ai/sdk";
+import type {
+  MessageParam,
+  ToolUseBlock,
+  ToolResultBlockParam,
+} from "@anthropic-ai/sdk/resources/messages.js";
+import { env } from "../config/env.js";
+import type { ClassifiedQuery } from "../preprocess/types.js";
+import { mcpManager } from "./mcp-client.js";
+import { buildSystemPrompt, buildUserMessage, buildMockContextText } from "./prompt-builder.js";
+import {
+  OrchestratorError,
+  type OrchestratorResult,
+  type IOrchestrator,
+} from "./types.js";
+import type { Reference, CodeReference, DbReference } from "../config/types.js";
 
-    // Step 2: 구조화된 프롬프트 조립
-    const prompt = buildStructuredPrompt(classifiedQuery, context);
+// ── 참조 추출 헬퍼 ────────────────────────────────────────
 
-    // Step 3: Claude Code 호출 (TODO: 실제 MCP 클라이언트로 교체)
-    const claudeResponse = await this.callClaude(prompt);
-
-    // Step 4: 결과 파싱 및 반환
-    return this.parseResult(sessionId, classifiedQuery.queryType, claudeResponse);
-  }
-
-  async continueSession(
-    sessionId: SessionId,
-    userReply: string
-  ): Promise<OrchestratorResult> {
-    // TODO: 세션 스토어에서 이전 컨텍스트 복원 후 이어서 처리
-    throw new Error(`continueSession(${sessionId}, "${userReply}") - not yet implemented`);
-  }
-
-  /** MCP 서버들(knowledge-base, member-db, history)에서 컨텍스트 수집 */
-  private async gatherContext(
-    classified: ClassifiedQuery
-  ): Promise<GatheredContext> {
-    // TODO: 실제 MCP 클라이언트 호출로 교체
-    // 현재는 각 MCP 서버가 독립 프로세스로 실행되므로,
-    // Claude Code 내에서 tool call을 통해 간접 호출되는 구조
-    console.error("[orchestrator] gatherContext - mock mode");
-
+function extractReference(toolName: string, input: Record<string, unknown>): Reference | null {
+  if (toolName === "erp_git__readFileRange") {
     return {
-      knowledgeBase: {
-        items: [
-          {
-            id: "kb-mock-001",
-            category: classified.queryType,
-            title: "(mock) 관련 지식베이스 항목",
-            content: "실제 KB 데이터가 여기에 들어옵니다.",
-            relevanceScore: 0.9,
-          },
-        ],
-      },
-      memberDb: {
-        memberId: classified.rawInquiry.memberId,
-        contractInfo: { status: "active", plan: "enterprise" },
-      },
-      history: {
-        memberId: classified.rawInquiry.memberId,
-        recentCases: [],
-      },
-    };
+      type: "CODE",
+      repo: "erp",
+      path: String(input.path ?? ""),
+      lineStart: Number(input.lineStart ?? 0),
+      lineEnd: Number(input.lineEnd ?? 0),
+    } satisfies CodeReference;
+  }
+  if (toolName === "erp_db__executeQuery") {
+    return {
+      type: "DB",
+      table: String(input.table ?? ""),
+      query: String(input.query ?? ""),
+    } satisfies DbReference;
+  }
+  return null;
+}
+
+// ── Orchestrator ──────────────────────────────────────────
+
+export class Orchestrator implements IOrchestrator {
+  private anthropic: Anthropic;
+
+  constructor() {
+    this.anthropic = new Anthropic({ apiKey: env.anthropicApiKey });
   }
 
-  /** Claude API / MCP 호출 (mock) */
-  private async callClaude(prompt: StructuredPrompt): Promise<string> {
-    // TODO: Anthropic SDK 또는 MCP를 통한 Claude 호출로 교체
-    console.error("[orchestrator] callClaude - mock mode");
-    console.error("[orchestrator] prompt:", JSON.stringify(prompt, null, 2));
-
-    return JSON.stringify({
-      answer: "(mock) Claude 응답이 여기에 들어옵니다.",
-      requiresFollowUp: false,
-    });
+  /** MCP 서버 초기화. 앱 시작 시 한 번만 호출합니다. */
+  async initialize(): Promise<void> {
+    await mcpManager.initialize();
   }
 
-  private parseResult(
-    sessionId: SessionId,
-    queryType: ClassifiedQuery["queryType"],
-    claudeRaw: string
-  ): OrchestratorResult {
-    let parsed: { answer: string; requiresFollowUp: boolean; followUpQuestion?: string };
-    try {
-      parsed = JSON.parse(claudeRaw);
-    } catch {
-      parsed = { answer: claudeRaw, requiresFollowUp: false };
+  async process(classifiedQuery: ClassifiedQuery): Promise<OrchestratorResult> {
+    const startMs = Date.now();
+
+    // 전체 타임아웃 레이스
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new OrchestratorError("TIMEOUT", "처리 시간 초과")),
+        env.claudeTimeoutMs
+      )
+    );
+
+    return Promise.race([this.processInternal(classifiedQuery, startMs), timeoutPromise]);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async continueSession(_sessionId: string, _userReply: string): Promise<OrchestratorResult> {
+    throw new OrchestratorError("NOT_IMPLEMENTED", "멀티턴 세션은 아직 지원되지 않습니다.");
+  }
+
+  // ── 내부 처리 ────────────────────────────────────────────
+
+  private async processInternal(
+    classifiedQuery: ClassifiedQuery,
+    startMs: number
+  ): Promise<OrchestratorResult> {
+    const { request } = classifiedQuery;
+
+    // 시스템 프롬프트 구성
+    const mockContextText = env.useMockContext
+      ? buildMockContextText(request.memberId)
+      : undefined;
+    const systemPrompt = buildSystemPrompt(mockContextText);
+
+    // 첫 번째 사용자 메시지
+    const messages: MessageParam[] = [
+      { role: "user", content: buildUserMessage(classifiedQuery) },
+    ];
+
+    const tools = mcpManager.getTools();
+    const references: Reference[] = [];
+    let toolCallCount = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let finalAnswer = "";
+
+    // tool_use 루프
+    for (let loop = 0; loop <= env.claudeMaxToolLoops; loop++) {
+      let response: Awaited<ReturnType<typeof this.anthropic.messages.create>>;
+      try {
+        response = await this.anthropic.messages.create({
+          model: env.claudeModel,
+          max_tokens: 4096,
+          system: systemPrompt,
+          tools: tools.length > 0 ? tools : undefined,
+          messages,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new OrchestratorError("CLAUDE_API_ERROR", `Claude API 호출 실패: ${msg}`);
+      }
+
+      totalInputTokens += response.usage.input_tokens;
+      totalOutputTokens += response.usage.output_tokens;
+
+      // 최종 텍스트 수집
+      for (const block of response.content) {
+        if (block.type === "text") {
+          finalAnswer = block.text;
+        }
+      }
+
+      // 종료 조건
+      if (response.stop_reason === "end_turn") {
+        break;
+      }
+
+      if (response.stop_reason !== "tool_use") {
+        // 예상치 못한 stop_reason
+        break;
+      }
+
+      if (loop >= env.claudeMaxToolLoops) {
+        throw new OrchestratorError(
+          "MAX_TOOL_LOOPS_EXCEEDED",
+          `도구 호출 상한(${env.claudeMaxToolLoops}회)에 도달했습니다.`
+        );
+      }
+
+      // tool_use 블록 처리
+      const toolUseBlocks = response.content.filter(
+        (b): b is ToolUseBlock => b.type === "tool_use"
+      );
+
+      // 어시스턴트 메시지 추가
+      messages.push({ role: "assistant", content: response.content });
+
+      // 각 도구 호출 실행
+      const toolResults: ToolResultBlockParam[] = [];
+      for (const toolUse of toolUseBlocks) {
+        toolCallCount++;
+        const input = toolUse.input as Record<string, unknown>;
+
+        // 참조 추출
+        const ref = extractReference(toolUse.name, input);
+        if (ref) references.push(ref);
+
+        // MCP 도구 호출
+        const result = await mcpManager.callTool(toolUse.name, input);
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: toolUse.id,
+          content: result.text,
+          is_error: result.isError,
+        });
+      }
+
+      messages.push({ role: "user", content: toolResults });
     }
 
+    const elapsedMs = Date.now() - startMs;
+
     return {
-      sessionId,
-      queryType,
-      answer: parsed.answer,
-      requiresFollowUp: parsed.requiresFollowUp ?? false,
-      followUpQuestion: parsed.followUpQuestion,
-      rawClaudeResponse: parsed,
+      sessionId: request.requestId,
+      queryType: classifiedQuery.queryType,
+      answer: finalAnswer || "답변을 생성하지 못했습니다.",
+      references,
+      meta: {
+        model: env.claudeModel,
+        toolCallCount,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        elapsedMs,
+      },
       processedAt: new Date().toISOString(),
     };
   }

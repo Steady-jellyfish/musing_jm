@@ -4,7 +4,25 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   logLevel: process.env.LOG_LEVEL ?? "info",
 
+  port: Number(process.env.PORT ?? 3000),
+
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  claudeModel: process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6",
+  claudeMaxToolLoops: Number(process.env.CLAUDE_MAX_TOOL_LOOPS ?? 10),
+  claudeTimeoutMs: Number(process.env.CLAUDE_TIMEOUT_MS ?? 60000),
+
+  useMockContext: process.env.USE_MOCK_CONTEXT === "true",
+
+  erpGitRoot: process.env.ERP_GIT_ROOT ?? "",
+
+  erpDb: {
+    host: process.env.ERP_DB_HOST ?? "localhost",
+    port: Number(process.env.ERP_DB_PORT ?? 3306),
+    name: process.env.ERP_DB_NAME ?? "",
+    user: process.env.ERP_DB_USER ?? "",
+    password: process.env.ERP_DB_PASSWORD ?? "",
+    queryTimeoutMs: Number(process.env.ERP_DB_QUERY_TIMEOUT_MS ?? 30000),
+  },
 
   memberDb: {
     host: process.env.MEMBER_DB_HOST ?? "localhost",

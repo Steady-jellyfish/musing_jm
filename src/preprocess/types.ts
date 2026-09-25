@@ -1,30 +1,40 @@
 import type { MemberId, QueryType, SessionId } from "../config/types.js";
 
-/** 입출력 담당(한상민)이 넘겨주는 원시 입력 */
-export interface RawInquiry {
+/** Gateway로부터 수신하는 HTTP 요청 (1차 필터링 완료된 정제 데이터) */
+export interface InquiryRequest {
+  /** Gateway 발급 요청 ID */
+  requestId: string;
   /** 회원사 식별자 */
   memberId: MemberId;
-  /** 사용자 원시 자연어 */
-  rawText: string;
-  /** 멀티턴 세션 ID. 첫 문의면 undefined */
-  sessionId?: SessionId;
-  /** 이전 대화 기록 (멀티턴) */
-  previousTurns?: ConversationTurn[];
+  /** 문의 유형 (Gateway가 1차 판별) */
+  queryType: QueryType;
+  /** 정제된 질의 */
+  question: string;
+  /** 요청자 정보 (권한 확인용) */
+  requester: {
+    userId: string;
+    role: string;
+  };
+  /** 화면 컨텍스트 (선택) */
+  context?: {
+    screenId?: string;
+    menuName?: string;
+    keyValues?: Record<string, string>;
+  };
 }
 
-/** 단일 대화 턴 */
-export interface ConversationTurn {
-  role: "user" | "assistant";
-  content: string;
-  timestamp: string; // ISO 8601
-}
-
-/** 유형 판별 결과 */
+/** 유형 검증·보정 결과 */
 export interface ClassifiedQuery {
   queryType: QueryType;
-  /** 판별 신뢰도 0~1 */
+  /** 검증 신뢰도 0~1 */
   confidence: number;
-  /** 판별 근거 키워드 */
-  matchedKeywords: string[];
-  rawInquiry: RawInquiry;
+  /** 원본 요청 */
+  request: InquiryRequest;
+}
+
+// 하위 호환을 위해 유지 (dev-runner.ts에서 사용)
+export interface RawInquiry {
+  memberId: MemberId;
+  rawText: string;
+  sessionId?: SessionId;
 }
