@@ -31,6 +31,12 @@ export const InquiryRequestSchema = Type.Object(
   {
     requestId: Type.String({ description: "Gateway 발급 요청 ID (UUID)" }),
     memberId: Type.String({ description: "회원사 식별자 (예: HANWHA_LIFELAB)" }),
+    targetSystem: Type.String({
+      description:
+        "대상 시스템 (예: ERP, CMS). memberId + targetSystem 조합으로 참조 Git 저장소를 결정합니다. " +
+        "설정에 없는 조합이면 REJECTED(UNSUPPORTED_TARGET)를 반환합니다.",
+      minLength: 1,
+    }),
     queryType: Type.Union(
       [Type.Literal("LOGIC_CHECK"), Type.Literal("REASON_CHECK")],
       { description: "문의 유형 (Gateway가 1차 판별)" }
@@ -48,7 +54,7 @@ export type InquiryRequestBody = Static<typeof InquiryRequestSchema>;
 
 const CodeReferenceSchema = Type.Object({
   type: Type.Literal("CODE"),
-  repo: Type.String({ description: "Git 저장소명" }),
+  repo: Type.String({ description: "Git 저장소 ID (config/repos.json의 id)" }),
   path: Type.String({ description: "파일 경로" }),
   lineStart: Type.Integer({ description: "시작 라인" }),
   lineEnd: Type.Integer({ description: "종료 라인" }),
@@ -70,6 +76,13 @@ const MetaSchema = Type.Object({
   inputTokens: Type.Integer({ description: "입력 토큰 수" }),
   outputTokens: Type.Integer({ description: "출력 토큰 수" }),
   elapsedMs: Type.Integer({ description: "처리 시간 (ms)" }),
+  codeBaseAt: Type.Optional(
+    Type.String({
+      description:
+        "저장소 캐시의 마지막 동기화 시각 (ISO 8601). " +
+        "동기화 상태가 stale이거나 syncing 중 기존 캐시를 사용한 경우에 포함됩니다.",
+    })
+  ),
 });
 
 const ErrorSchema = Type.Optional(
@@ -116,10 +129,33 @@ const McpServerStatusSchema = Type.Object({
   ),
 });
 
+const RepoStatusSchema = Type.Object({
+  id: Type.String({ description: "저장소 ID (config/repos.json의 id)" }),
+  description: Type.Optional(Type.String()),
+  status: Type.Union(
+    [
+      Type.Literal("syncing"),
+      Type.Literal("synced"),
+      Type.Literal("stale"),
+      Type.Literal("missing"),
+    ],
+    {
+      description:
+        "동기화 상태: syncing(진행 중) / synced(완료) / " +
+        "stale(실패·기존 캐시 사용 중) / missing(설정 없음 또는 캐시 없음)",
+    }
+  ),
+  syncedAt: Type.Optional(
+    Type.String({ description: "마지막 성공 동기화 시각 (stale 상태에서도 보존)" })
+  ),
+  warning: Type.Optional(Type.String({ description: "경고 메시지 (stale/missing 시)" })),
+});
+
 export const HealthResponseSchema = Type.Object({
   status: Type.Literal("ok"),
   timestamp: Type.String(),
   mcp: Type.Array(McpServerStatusSchema, { description: "MCP 서버별 연결 상태" }),
+  repos: Type.Array(RepoStatusSchema, { description: "Git 저장소별 동기화 상태" }),
 });
 
 export type HealthResponse = Static<typeof HealthResponseSchema>;

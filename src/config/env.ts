@@ -13,7 +13,12 @@ export const env = {
 
   useMockContext: process.env.USE_MOCK_CONTEXT === "true",
 
-  erpGitRoot: process.env.ERP_GIT_ROOT ?? "",
+  erpGitCacheDir: process.env.ERP_GIT_CACHE_DIR ?? "./.cache/repos",
+
+  gitSync: {
+    retryIntervalMs: Number(process.env.GIT_SYNC_RETRY_INTERVAL_MS ?? 300_000), // 기본 5분
+    maxRetries: Number(process.env.GIT_SYNC_MAX_RETRIES ?? 3),
+  },
 
   erpDb: {
     host: process.env.ERP_DB_HOST ?? "localhost",

@@ -83,7 +83,7 @@ out
 dist
 .output
 
-# Gatsby files
+# Gatsby files & ERP Git 저장소 캐시 (ERP_GIT_CACHE_DIR 기본 경로: .cache/repos/)
 .cache/
 # Comment in the public line in if your project uses Gatsby and not Next.js
 # https://nextjs.org/blog/next-9-1#public-directory-support

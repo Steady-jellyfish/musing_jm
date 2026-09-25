@@ -44,4 +44,9 @@ export interface ResponseMeta {
   inputTokens: number;
   outputTokens: number;
   elapsedMs: number;
+  /**
+   * 기존 캐시를 사용한 경우의 마지막 동기화 시각 (ISO 8601).
+   * 저장소 상태가 stale이거나 syncing 중에 캐시로 처리한 경우에만 포함됩니다.
+   */
+  codeBaseAt?: string;
 }

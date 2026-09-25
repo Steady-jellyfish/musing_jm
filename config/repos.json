@@ -1,0 +1,10 @@
+[
+  {
+    "id": "erp",
+    "memberId": "HANWHA_LIFELAB",
+    "system": "ERP",
+    "urlEnv": "ERP_GIT_URL",
+    "branchEnv": "ERP_GIT_BRANCH",
+    "description": "한화라이프랩 ERP 메인 저장소"
+  }
+]

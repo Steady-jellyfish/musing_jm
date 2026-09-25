@@ -13,6 +13,7 @@ async function main() {
   const testRequest: InquiryRequest = {
     requestId: "test-001",
     memberId: "HANWHA_LIFELAB",
+    targetSystem: "ERP",
     queryType: "LOGIC_CHECK",
     question: "PKG_SU_CALC 로직이 어디에 구현되어 있나요?",
     requester: { userId: "dev-user", role: "developer" },
@@ -23,7 +24,9 @@ async function main() {
   const classified = classifyQuery(testRequest);
   console.log("[dev-runner] 검증 결과:", classified);
 
-  const result = await orchestrator.process(classified);
+  const result = await orchestrator.process(classified, {
+    allowedRepos: ["erp"],
+  });
   console.log("[dev-runner] 최종 결과:", JSON.stringify(result, null, 2));
 }
 
