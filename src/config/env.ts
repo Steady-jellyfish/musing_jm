@@ -12,21 +12,24 @@ export const env = {
   claudeTimeoutMs: Number(process.env.CLAUDE_TIMEOUT_MS ?? 60000),
 
   useMockContext: process.env.USE_MOCK_CONTEXT === "true",
+  enableSandbox: process.env.ENABLE_SANDBOX === "true",
 
-  erpGitCacheDir: process.env.ERP_GIT_CACHE_DIR ?? "./.cache/repos",
+  gitCacheDir: process.env.GIT_CACHE_DIR ?? "./.cache/repos",
 
   gitSync: {
-    retryIntervalMs: Number(process.env.GIT_SYNC_RETRY_INTERVAL_MS ?? 300_000), // 기본 5분
+    retryIntervalMs: Number(process.env.GIT_SYNC_RETRY_INTERVAL_MS ?? 300_000),
     maxRetries: Number(process.env.GIT_SYNC_MAX_RETRIES ?? 3),
   },
 
+  dbQueryTimeoutMs: Number(process.env.DB_QUERY_TIMEOUT_MS ?? 30000),
+
+  // 한화라이프랩 ERP DB (나중에 repos.json처럼 동적 매핑 전환 예정)
   erpDb: {
-    host: process.env.ERP_DB_HOST ?? "localhost",
-    port: Number(process.env.ERP_DB_PORT ?? 3306),
-    name: process.env.ERP_DB_NAME ?? "",
-    user: process.env.ERP_DB_USER ?? "",
-    password: process.env.ERP_DB_PASSWORD ?? "",
-    queryTimeoutMs: Number(process.env.ERP_DB_QUERY_TIMEOUT_MS ?? 30000),
+    host: process.env.HANWHA_ERP_DB_HOST ?? "",
+    port: Number(process.env.HANWHA_ERP_DB_PORT ?? 3306),
+    name: process.env.HANWHA_ERP_DB_NAME ?? "",
+    user: process.env.HANWHA_ERP_DB_USER ?? "",
+    password: process.env.HANWHA_ERP_DB_PASSWORD ?? "",
   },
 
   memberDb: {
