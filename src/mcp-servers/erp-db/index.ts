@@ -20,18 +20,16 @@ import "dotenv/config";
 
 // ── 설정 ──────────────────────────────────────────────────
 const DB_CONFIG = {
-  host: process.env.ERP_DB_HOST ?? "localhost",
-  port: Number(process.env.ERP_DB_PORT ?? 3306),
-  database: process.env.ERP_DB_NAME ?? "",
-  user: process.env.ERP_DB_USER ?? "",
-  password: process.env.ERP_DB_PASSWORD ?? "",
-  // mysql2 connectTimeout 옵션 (ms)
-  connectTimeout: Number(process.env.ERP_DB_QUERY_TIMEOUT_MS ?? 30000),
-  // 결과를 객체 배열로 반환
+  host: process.env.DB_HOST ?? "localhost",
+  port: Number(process.env.DB_PORT ?? 3306),
+  database: process.env.DB_NAME ?? "",
+  user: process.env.DB_USER ?? "",
+  password: process.env.DB_PASSWORD ?? "",
+  connectTimeout: Number(process.env.DB_QUERY_TIMEOUT_MS ?? 30000),
   rowsAsArray: false,
 };
 
-const QUERY_TIMEOUT_MS = Number(process.env.ERP_DB_QUERY_TIMEOUT_MS ?? 30000);
+const QUERY_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS ?? 30000);
 const MAX_ROWS = 100;
 
 // ── PII 컬럼 마스킹 패턴 ─────────────────────────────────

@@ -78,7 +78,7 @@ class RepoSyncManager {
   private readonly retryIntervalMs: number;
 
   constructor() {
-    this.cacheDir = path.resolve(env.erpGitCacheDir);
+    this.cacheDir = path.resolve(env.gitCacheDir);
     this.maxRetries = env.gitSync.maxRetries;
     this.retryIntervalMs = env.gitSync.retryIntervalMs;
   }
