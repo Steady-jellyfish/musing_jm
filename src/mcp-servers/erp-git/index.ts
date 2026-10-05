@@ -10,7 +10,7 @@
  *   - repo (선택): config/repos.json의 id. 생략 시 첫 번째 저장소 사용.
  *
  * 보안:
- *   - 모든 경로는 ERP_GIT_CACHE_DIR 하위로만 제한 (path traversal 차단)
+ *   - 모든 경로는 GIT_CACHE_DIR 하위로만 제한 (path traversal 차단)
  *   - 쓰기 기능 없음
  *   - 결과 개수/라인 수 상한 강제
  *
@@ -44,7 +44,7 @@ function loadReposConfig(): RepoConfig[] {
 }
 
 const repos = loadReposConfig();
-const CACHE_DIR = path.resolve(process.env.ERP_GIT_CACHE_DIR ?? "./.cache/repos");
+const CACHE_DIR = path.resolve(process.env.GIT_CACHE_DIR ?? "./.cache/repos");
 
 const LIMITS = {
   listFiles: { maxDepth: 3, maxEntries: 500 },
@@ -69,7 +69,7 @@ function resolveRepoRoot(repoId?: string): { id: string; root: string } {
 
   if (!fs.existsSync(root)) {
     throw new Error(
-      `저장소 '${id}' 캐시가 없습니다. 동기화 중이거나 ERP_GIT_URL이 설정되지 않았을 수 있습니다.`
+      `저장소 '${id}' 캐시가 없습니다. 동기화 중이거나 Git URL 환경변수가 설정되지 않았을 수 있습니다.`
     );
   }
 

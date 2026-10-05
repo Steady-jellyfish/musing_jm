@@ -12,6 +12,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Tool } from "@anthropic-ai/sdk/resources/messages.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { env } from "../config/env.js";
 
 // ── 도구명 변환 헬퍼 ──────────────────────────────────────
@@ -81,13 +83,24 @@ class McpClientManager {
     }> = [
       {
         name: "erp-git",
-        skipReason: process.env.ERP_GIT_URL ? null : "ERP_GIT_URL 없음",
+        skipReason: (() => {
+          // repos.json에 등록된 저장소 중 URL이 하나라도 설정되어 있으면 활성화
+          try {
+            const reposJson = JSON.parse(
+              readFileSync(resolve("config/repos.json"), "utf-8")
+            ) as Array<{ urlEnv: string }>;
+            const hasAny = reposJson.some((r) => process.env[r.urlEnv]);
+            return hasAny ? null : "설정된 Git URL 없음 (repos.json 참조)";
+          } catch {
+            return "repos.json 로드 실패";
+          }
+        })(),
         config: {
           command: isWin ? "cmd" : "npx",
           args: isWin
             ? ["/c", "npx", "tsx", "src/mcp-servers/erp-git/index.ts"]
             : ["tsx", "src/mcp-servers/erp-git/index.ts"],
-          env: { ERP_GIT_CACHE_DIR: env.erpGitCacheDir },
+          env: { GIT_CACHE_DIR: env.gitCacheDir },
         },
       },
       {
@@ -95,9 +108,9 @@ class McpClientManager {
         skipReason: (() => {
           const missing = (
             [
-              ["ERP_DB_HOST", env.erpDb.host],
-              ["ERP_DB_NAME", env.erpDb.name],
-              ["ERP_DB_USER", env.erpDb.user],
+              ["HANWHA_ERP_DB_HOST", env.erpDb.host],
+              ["HANWHA_ERP_DB_NAME", env.erpDb.name],
+              ["HANWHA_ERP_DB_USER", env.erpDb.user],
             ] as Array<[string, string]>
           )
             .filter(([, v]) => !v)
@@ -110,12 +123,12 @@ class McpClientManager {
             ? ["/c", "npx", "tsx", "src/mcp-servers/erp-db/index.ts"]
             : ["tsx", "src/mcp-servers/erp-db/index.ts"],
           env: {
-            ERP_DB_HOST: env.erpDb.host,
-            ERP_DB_PORT: String(env.erpDb.port),
-            ERP_DB_NAME: env.erpDb.name,
-            ERP_DB_USER: env.erpDb.user,
-            ERP_DB_PASSWORD: env.erpDb.password,
-            ERP_DB_QUERY_TIMEOUT_MS: String(env.erpDb.queryTimeoutMs),
+            DB_HOST: env.erpDb.host,
+            DB_PORT: String(env.erpDb.port),
+            DB_NAME: env.erpDb.name,
+            DB_USER: env.erpDb.user,
+            DB_PASSWORD: env.erpDb.password,
+            DB_QUERY_TIMEOUT_MS: String(env.dbQueryTimeoutMs),
           },
         },
       },

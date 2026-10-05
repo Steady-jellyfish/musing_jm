@@ -79,7 +79,7 @@ npm install
 
 # 환경변수 설정
 cp .env.example .env
-# .env 파일에 ANTHROPIC_API_KEY, ERP_GIT_URL, ERP_GIT_BRANCH, ERP_DB_* 등 실제 값 입력
+# .env 파일에 ANTHROPIC_API_KEY, HANWHA_ERP_GIT_URL, HANWHA_ERP_DB_* 등 실제 값 입력
 
 # 개발 서버 실행
 npm run dev
@@ -88,19 +88,19 @@ npm run dev
 서버 기동 시 Git 동기화 상태와 MCP 연결 상태가 stderr에 출력됩니다.
 
 ```
-WARN [git-sync] erp: 건너뜀 (ERP_GIT_URL, ERP_GIT_BRANCH 없음)
-WARN [mcp-manager] erp-git: 건너뜀 (ERP_GIT_URL 없음)
-WARN [mcp-manager] erp-db: 건너뜀 (ERP_DB_NAME, ERP_DB_USER 없음)
+WARN [git-sync] hanwha-erp: 건너뜀 (HANWHA_ERP_GIT_URL, HANWHA_ERP_GIT_BRANCH 없음)
+WARN [mcp-manager] erp-git: 건너뜀 (설정된 Git URL 없음)
+WARN [mcp-manager] erp-db: 건너뜀 (HANWHA_ERP_DB_NAME, HANWHA_ERP_DB_USER 없음)
 INFO [server] http://0.0.0.0:3000 에서 수신 중
 INFO [server] Swagger UI: http://localhost:3000/docs
 ```
 
-ERP_GIT_URL이 설정된 경우:
+HANWHA_ERP_GIT_URL이 설정된 경우:
 
 ```
-INFO [git-sync] erp: git clone 시작 (branch: main)   ← 첫 기동, 백그라운드 진행
-INFO [server] http://0.0.0.0:3000 에서 수신 중        ← clone 완료 전에 서버가 먼저 응답
-INFO [git-sync] erp: clone 완료
+INFO [git-sync] hanwha-erp: git clone 시작 (branch: main)   ← 첫 기동, 백그라운드 진행
+INFO [server] http://0.0.0.0:3000 에서 수신 중               ← clone 완료 전에 서버가 먼저 응답
+INFO [git-sync] hanwha-erp: clone 완료
 ```
 
 ## 저장소 설정 (`config/repos.json`)
@@ -111,14 +111,29 @@ INFO [git-sync] erp: clone 완료
 ```json
 [
   {
-    "id": "erp",
+    "id": "hanwha-erp",
     "memberId": "HANWHA_LIFELAB",
     "system": "ERP",
-    "urlEnv": "ERP_GIT_URL",
-    "branchEnv": "ERP_GIT_BRANCH",
+    "urlEnv": "HANWHA_ERP_GIT_URL",
+    "branchEnv": "HANWHA_ERP_GIT_BRANCH",
     "description": "한화라이프랩 ERP 메인 저장소"
   }
 ]
+```
+
+저장소 추가 시 이 파일에 항목을 추가하고 `.env`에 대응하는 환경변수를 설정합니다.
+네이밍 규칙: `{회원사}_{시스템}_GIT_URL` / `{회원사}_{시스템}_GIT_BRANCH`
+
+```json
+// 확장 예시 (repos.json에 추가)
+{
+  "id": "hanwha-cms",
+  "memberId": "HANWHA_LIFELAB",
+  "system": "CMS",
+  "urlEnv": "HANWHA_CMS_GIT_URL",
+  "branchEnv": "HANWHA_CMS_GIT_BRANCH",
+  "description": "한화라이프랩 CMS 저장소"
+}
 ```
 
 ## Git 동기화 동작
@@ -133,7 +148,7 @@ INFO [git-sync] erp: clone 완료
 
 - 인증: PC의 **Git Credential Manager** 사용 (코드·URL에 자격증명 미포함)
 - `GIT_TERMINAL_PROMPT=0` — 인증 실패 시 대화창 없이 즉시 오류 반환
-- `reset --hard` 실행 전 대상 경로가 `ERP_GIT_CACHE_DIR` 하위인지 검증
+- `reset --hard` 실행 전 대상 경로가 `GIT_CACHE_DIR` 하위인지 검증
 - 캐시 경로(`.cache/`)는 `.gitignore`에 포함됨
 
 ## 주요 환경변수
@@ -145,15 +160,15 @@ INFO [git-sync] erp: clone 완료
 | `CLAUDE_MODEL` | 사용할 Claude 모델 | `claude-sonnet-4-6` |
 | `CLAUDE_MAX_TOOL_LOOPS` | tool_use 최대 반복 횟수 | `10` |
 | `CLAUDE_TIMEOUT_MS` | 전체 처리 타임아웃 (ms) | `60000` |
-| `ERP_GIT_URL` | ERP Git 저장소 URL | 미설정 시 erp-git 비활성 |
-| `ERP_GIT_BRANCH` | 동기화할 브랜치 | 필수 (없으면 missing) |
-| `ERP_GIT_CACHE_DIR` | 로컬 캐시 저장 경로 | `./.cache/repos` |
+| `{회원사}_{시스템}_GIT_URL` | Git 저장소 URL (예: `HANWHA_ERP_GIT_URL`) | 미설정 시 해당 저장소 비활성 |
+| `{회원사}_{시스템}_GIT_BRANCH` | 동기화할 브랜치 (예: `HANWHA_ERP_GIT_BRANCH`) | 필수 (없으면 missing) |
+| `GIT_CACHE_DIR` | 로컬 캐시 저장 경로 | `./.cache/repos` |
 | `GIT_SYNC_RETRY_INTERVAL_MS` | 동기화 실패 재시도 간격 (ms) | `300000` (5분) |
 | `GIT_SYNC_MAX_RETRIES` | 최대 재시도 횟수 | `3` |
-| `ERP_DB_HOST` | ERP MariaDB 호스트 | 미설정 시 erp-db 비활성 |
-| `ERP_DB_NAME` | ERP MariaDB 데이터베이스명 | — |
-| `ERP_DB_USER` | ERP MariaDB 사용자 (읽기 전용) | — |
-| `ERP_DB_PASSWORD` | ERP MariaDB 비밀번호 | — |
+| `{회원사}_{시스템}_DB_HOST` | MariaDB 호스트 (예: `HANWHA_ERP_DB_HOST`) | 미설정 시 erp-db 비활성 |
+| `{회원사}_{시스템}_DB_NAME` | 데이터베이스명 | — |
+| `{회원사}_{시스템}_DB_USER` | 읽기 전용 계정 | — |
+| `{회원사}_{시스템}_DB_PASSWORD` | 비밀번호 | — |
 | `USE_MOCK_CONTEXT` | Mock 데이터를 사전 컨텍스트로 주입 | `false` |
 
 전체 목록은 `.env.example` 참조.
@@ -170,7 +185,7 @@ INFO [git-sync] erp: clone 완료
   "timestamp": "2026-09-26T00:00:00.000Z",
   "mcp": [
     { "name": "erp-git", "status": "connected", "tools": ["listFiles", "searchCode", "readFileRange"] },
-    { "name": "erp-db",  "status": "skipped",   "reason": "ERP_DB_NAME, ERP_DB_USER 없음" }
+    { "name": "erp-db",  "status": "skipped",   "reason": "HANWHA_ERP_DB_NAME, HANWHA_ERP_DB_USER 없음" }
   ],
   "repos": [
     {
@@ -262,7 +277,7 @@ ERP 문의를 처리하고 답변을 반환합니다.
 
 **erp-git**
 - 읽기 전용 (쓰기 도구 없음)
-- `ERP_GIT_CACHE_DIR` 경로 밖 접근 차단 (path traversal 방지)
+- `GIT_CACHE_DIR` 경로 밖 접근 차단 (path traversal 방지)
 - `searchCode` 결과: 파일경로 + 라인번호 + 전후 2줄만 반환
 
 **erp-db**
@@ -280,6 +295,12 @@ npm run dev:erp-git  # erp-git MCP 서버 단독 실행
 npm run dev:erp-db   # erp-db MCP 서버 단독 실행
 npm run build        # TypeScript 빌드
 ```
+
+## Sandbox 제거 방법
+
+1. `src/sandbox/` 폴더 삭제
+2. `src/server/app.ts`에서 sandbox 등록 블록(`if (env.enableSandbox) { ... }`) 삭제
+3. `.env`에서 `ENABLE_SANDBOX` 항목 삭제
 
 ## 관련 역할 분담
 
