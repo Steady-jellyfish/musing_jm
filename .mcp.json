@@ -54,7 +54,7 @@
     },
     "notion": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@notionhq/mcp"],
+      "args": ["/c", "npx", "-y", "@notionhq/notion-mcp-server"],
       "env": {
         "NOTION_API_KEY": "${NOTION_API_KEY}"
       }
