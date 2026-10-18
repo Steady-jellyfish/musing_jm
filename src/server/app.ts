@@ -3,6 +3,7 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { inquiryRoutes } from "./routes/inquiry.js";
+import { processRoutes } from "./routes/process.js";
 import { env } from "../config/env.js";
 
 /**
@@ -24,7 +25,8 @@ export async function buildApp() {
         version: "0.1.0",
       },
       tags: [
-        { name: "inquiry", description: "문의 처리 엔드포인트" },
+        { name: "process", description: "질의 처리 (Front API 스펙)" },
+        { name: "inquiry", description: "문의 처리 (Orchestrator 경로)" },
         { name: "system", description: "시스템 상태" },
         { name: "sandbox", description: "과제용 sandbox 엔드포인트" },
       ],
@@ -37,7 +39,8 @@ export async function buildApp() {
   });
 
   // ── 라우트 등록 ─────────────────────────────────────
-  await app.register(inquiryRoutes);
+  await app.register(processRoutes);   // POST /process, POST /cancel, GET /health
+  await app.register(inquiryRoutes);   // GET /health/system, POST /api/v1/inquiry
 
   // ── Sandbox 라우트 (ENABLE_SANDBOX=true 일 때만) ───
   if (env.enableSandbox) {

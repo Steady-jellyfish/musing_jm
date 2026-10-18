@@ -7,9 +7,9 @@ export const env = {
   port: Number(process.env.PORT ?? 3000),
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
-  claudeModel: process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6",
-  claudeMaxToolLoops: Number(process.env.CLAUDE_MAX_TOOL_LOOPS ?? 10),
-  claudeTimeoutMs: Number(process.env.CLAUDE_TIMEOUT_MS ?? 60000),
+  claudeModel: process.env.CLAUDE_MODEL ?? "claude-haiku-4-5-20251001",
+  claudeMaxToolLoops: Number(process.env.CLAUDE_MAX_TOOL_LOOPS ?? 15),
+  claudeTimeoutMs: Number(process.env.CLAUDE_TIMEOUT_MS ?? 30000),
 
   useMockContext: process.env.USE_MOCK_CONTEXT === "true",
   enableSandbox: process.env.ENABLE_SANDBOX === "true",

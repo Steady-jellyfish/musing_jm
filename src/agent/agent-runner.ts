@@ -290,10 +290,10 @@ export class AgentRunner {
 
     const mcpServers: Record<string, { command: string; args: string[]; env?: Record<string, string> }> = {};
 
-    if (process.env.ERP_GIT_URL) {
+    if (process.env.HANWHA_ERP_GIT_URL) {
       mcpServers["erp-git"] = {
         ...erpGitCmd,
-        env: { ERP_GIT_CACHE_DIR: env.erpGitCacheDir },
+        env: { GIT_CACHE_DIR: env.gitCacheDir },
       };
     }
 
@@ -306,7 +306,7 @@ export class AgentRunner {
           ERP_DB_NAME: env.erpDb.name,
           ERP_DB_USER: env.erpDb.user,
           ERP_DB_PASSWORD: env.erpDb.password,
-          ERP_DB_QUERY_TIMEOUT_MS: String(env.erpDb.queryTimeoutMs),
+          ERP_DB_QUERY_TIMEOUT_MS: String(env.dbQueryTimeoutMs),
         },
       };
     }
@@ -316,6 +316,7 @@ export class AgentRunner {
     let finalAnswer = "";
     let agentFailed = false;
     let agentError = "";
+    let totalTokens = 0;
 
     const queryOptions: Parameters<typeof query>[0] = {
       prompt,
@@ -326,8 +327,19 @@ export class AgentRunner {
           ...mcpServers,
           "musing-core": customServer,
         },
-        // Agent SDK 기본 도구는 허용하지 않음 (ERP MCP 도구만 사용)
-        allowedTools: [] as string[],
+        allowedTools: [
+          // 커스텀 인프로세스 도구
+          "mcp__musing-core__set_query_type",
+          "mcp__musing-core__request_clarification",
+          // ERP Git 도구
+          "mcp__erp-git__listFiles",
+          "mcp__erp-git__searchCode",
+          "mcp__erp-git__readFileRange",
+          // ERP DB 도구
+          "mcp__erp-db__listTables",
+          "mcp__erp-db__describeTable",
+          "mcp__erp-db__executeQuery",
+        ],
         maxTurns: env.claudeMaxToolLoops + 1,
         hooks: {
           PostToolUse: [{ matcher: ".*", hooks: [trackToolUse] }],
@@ -361,6 +373,16 @@ export class AgentRunner {
         // 최종 결과 캡처
         if (message && typeof message === "object" && "result" in message) {
           finalAnswer = String((message as { result: string }).result);
+        }
+
+        // 토큰 사용량 집계
+        if (message && typeof message === "object" && "usage" in message) {
+          const u = (message as {
+            usage?: { input_tokens?: number; output_tokens?: number };
+          }).usage;
+          if (u) {
+            totalTokens += (u.input_tokens ?? 0) + (u.output_tokens ?? 0);
+          }
         }
       }
     } catch (err) {
@@ -452,6 +474,7 @@ export class AgentRunner {
       trace,
       usage: {
         elapsedMs: totalElapsed,
+        tokens: totalTokens || undefined,
         filesRead,
         dbQueries,
       },
