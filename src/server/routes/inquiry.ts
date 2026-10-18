@@ -22,12 +22,15 @@ const EMPTY_META = {
  * /health 와 /api/v1/inquiry 라우트를 등록합니다.
  */
 export async function inquiryRoutes(app: FastifyInstance): Promise<void> {
-  // ── GET /health ─────────────────────────────────────
+  // ── GET /health/system ──────────────────────────────
+  // 운영 상세 상태 (MCP 연결 + Git 동기화)
+  // /health 는 process.ts (운영 모니터링 스펙)가 사용
   app.get(
-    "/health",
+    "/health/system",
     {
       schema: {
-        summary: "헬스체크",
+        summary: "시스템 상세 헬스체크",
+        description: "MCP 서버 연결 상태와 Git 저장소 동기화 상태를 반환합니다.",
         tags: ["system"],
         response: { 200: HealthResponseSchema },
       },
