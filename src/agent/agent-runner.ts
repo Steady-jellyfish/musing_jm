@@ -1,17 +1,11 @@
 /**
  * AgentRunner
  *
- * @anthropic-ai/claude-agent-sdk 의 query() 를 사용해 ERP 분석 에이전트를 실행합니다.
- *
- * 변경 전 (Anthropic SDK 직접 호출):
- *   - anthropic.messages.create() + 수동 tool_use 루프
- *   - McpClientManager가 서브프로세스 MCP 서버를 직접 관리
- *
- * 변경 후 (Agent SDK):
- *   - query()가 tool_use 루프를 자동 처리
- *   - mcpServers 옵션으로 MCP 서버 연결을 Agent SDK에 위임
- *   - hooks 로 도구 호출을 추적 → references / trace 생성
- *   - 커스텀 인프로세스 MCP 서버로 set_query_type / request_clarification 제공
+ * Agent SDK의 query()를 SSE 스트림으로 감싸 실행합니다.
+ * - runStream(): SSE 이벤트를 yield하는 AsyncGenerator
+ * - 도구 호출마다 trace 이벤트를 실시간 emit
+ * - sessionId 재사용으로 채팅형 연속 대화 지원
+ * - 취소: sessionStore.cancelRequest() → 내부 agentGen.return() → 스트림 종료
  */
 
 import {
@@ -44,30 +38,24 @@ export interface Reference {
   description: string;
 }
 
-export interface ProcessResult {
-  status: "done" | "waiting_input" | "failed";
-  sessionId: string;
-  type?: "LOGIC_REVIEW" | "ERROR_CAUSE";
-
-  // status === "done"
-  answer?: string;
-  references?: Reference[];
-  usage?: {
-    elapsedMs: number;
-    tokens?: number;
-    filesRead?: number;
-    dbQueries?: number;
-  };
-
-  // status === "waiting_input"
-  questions?: ClarificationQuestion[];
-
-  // 공통
-  trace: TraceEntry[];
-
-  // status === "failed"
-  error?: string;
-}
+/** SSE 이벤트 유니온 타입 */
+export type SseEvent =
+  | { event: "connected"; data: { sessionId: string } }
+  | { event: "trace"; data: TraceEntry }
+  | {
+      event: "clarification";
+      data: { questions: ClarificationQuestion[]; type?: "LOGIC_REVIEW" | "ERROR_CAUSE" };
+    }
+  | {
+      event: "done";
+      data: {
+        answer: string;
+        references: Reference[];
+        type?: "LOGIC_REVIEW" | "ERROR_CAUSE";
+        usage: { elapsedMs: number; tokens?: number; filesRead?: number; dbQueries?: number };
+      };
+    }
+  | { event: "error"; data: { sessionId: string; error: string } };
 
 // ── 시스템 프롬프트 ────────────────────────────────────────
 
@@ -110,17 +98,26 @@ function buildMcpCommand(scriptPath: string): { command: string; args: string[] 
 export class AgentRunner {
   constructor(private readonly sessionStore: SessionStore) {}
 
-  async run(req: ProcessRequest): Promise<ProcessResult> {
+  /**
+   * 질의를 처리하고 SSE 이벤트를 실시간으로 yield합니다.
+   *
+   * 이벤트 순서:
+   *   connected → trace (반복) → clarification | done | error
+   *
+   * 채팅 연속 대화:
+   *   sessionId를 재사용하면 Agent SDK의 resume으로 이전 대화 맥락을 이어갑니다.
+   *   answers 없이 question만 보내면 follow-up 질문으로 처리됩니다.
+   */
+  async *runStream(req: ProcessRequest): AsyncGenerator<SseEvent> {
     const startMs = Date.now();
 
     // ── 중복 요청 차단 ────────────────────────────────────
     if (this.sessionStore.isRequestRunning(req.requestId)) {
-      return {
-        status: "failed",
-        sessionId: req.sessionId ?? "",
-        trace: [],
-        error: "동일한 requestId로 이미 처리 중인 요청이 있습니다.",
+      yield {
+        event: "error",
+        data: { sessionId: req.sessionId ?? "", error: "동일한 requestId로 이미 처리 중인 요청이 있습니다." },
       };
+      return;
     }
 
     // ── 세션 관리 ─────────────────────────────────────────
@@ -130,46 +127,60 @@ export class AgentRunner {
     if (req.sessionId) {
       session = this.sessionStore.getSession(req.sessionId);
       if (!session) {
-        return {
-          status: "failed",
-          sessionId: req.sessionId,
-          trace: [],
-          error: `세션을 찾을 수 없습니다: ${req.sessionId}`,
+        yield {
+          event: "error",
+          data: { sessionId: req.sessionId, error: `세션을 찾을 수 없습니다: ${req.sessionId}` },
         };
+        return;
       }
       sessionId = req.sessionId;
+      // done 상태 세션에 follow-up이 오면 재활성화
+      if (session.status === "done") {
+        this.sessionStore.updateSession(sessionId, { status: "active" });
+      }
     } else {
       sessionId = this.sessionStore.createSession(req.memberId, req.question);
     }
 
-    // ── 추적 상태 (클로저) ────────────────────────────────
-    let pendingClarification: ClarificationQuestion[] | null = null;
-    let queryType: "LOGIC_REVIEW" | "ERROR_CAUSE" | undefined =
-      session?.queryType;
-    const references: Reference[] = [];
-    const tracePhases = {
-      classify: undefined as TraceEntry | undefined,
-      gitSearch: { count: 0, details: [] as string[], lastMs: 0 },
-      dbQuery: { count: 0, details: [] as string[], lastMs: 0 },
+    // ── 연결 확인 이벤트 ──────────────────────────────────
+    yield { event: "connected", data: { sessionId } };
+
+    // ── 이벤트 큐 (백그라운드 → 스트림 브릿지) ──────────
+    const queue: Array<SseEvent | null> = [];
+    let waitResolve: (() => void) | null = null;
+    let cancelled = false;
+
+    const push = (event: SseEvent | null) => {
+      if (cancelled) return;
+      queue.push(event);
+      waitResolve?.();
+      waitResolve = null;
     };
+
+    // ── 추적 상태 ─────────────────────────────────────────
+    let pendingClarification: ClarificationQuestion[] | null = null;
+    let queryType: "LOGIC_REVIEW" | "ERROR_CAUSE" | undefined = session?.queryType;
+    const references: Reference[] = [];
     let filesRead = 0;
     let dbQueries = 0;
+    let totalTokens = 0;
 
-    // ── 커스텀 인프로세스 MCP 서버 ────────────────────────
+    // ── 커스텀 인프로세스 MCP 도구 ───────────────────────
     const setQueryTypeTool = tool(
       "set_query_type",
       "분석 시작 시 질의 유형을 선언합니다. LOGIC_REVIEW: 구현 확인, ERROR_CAUSE: 오류 원인 분석",
       { type: z.enum(["LOGIC_REVIEW", "ERROR_CAUSE"]) },
       async (args) => {
         queryType = args.type;
-        tracePhases.classify = {
-          label: "유형 판별",
-          detail: args.type === "LOGIC_REVIEW" ? "로직 문의" : "오류 원인 확인",
-          elapsedMs: Date.now() - startMs,
-        };
-        return {
-          content: [{ type: "text" as const, text: `질의 유형: ${args.type}` }],
-        };
+        push({
+          event: "trace",
+          data: {
+            label: "유형 판별",
+            detail: args.type === "LOGIC_REVIEW" ? "로직 문의" : "오류 원인 확인",
+            elapsedMs: Date.now() - startMs,
+          },
+        });
+        return { content: [{ type: "text" as const, text: `질의 유형: ${args.type}` }] };
       }
     );
 
@@ -208,7 +219,7 @@ export class AgentRunner {
       tools: [setQueryTypeTool, requestClarificationTool],
     });
 
-    // ── 도구 호출 추적 Hook ───────────────────────────────
+    // ── PostToolUse Hook (실시간 trace 이벤트 emit) ───────
     const trackToolUse: HookCallback = async (hookInput) => {
       const inp = hookInput as {
         tool_name?: string;
@@ -218,69 +229,53 @@ export class AgentRunner {
       const toolInput = inp.tool_input ?? {};
       const elapsed = Date.now() - startMs;
 
-      // Git 도구
-      if (
-        toolName.includes("readFileRange") ||
-        toolName.includes("read_file_range")
-      ) {
+      if (toolName.includes("readFileRange") || toolName.includes("read_file_range")) {
         filesRead++;
         const path = String(toolInput.path ?? "");
         const lineStart = Number(toolInput.lineStart ?? toolInput.line_start ?? 0);
         const locator = lineStart > 0 ? `${path}:${lineStart}` : path;
-        if (locator) {
-          references.push({ locator, description: `파일 읽기: ${path}` });
-        }
-        tracePhases.gitSearch.count++;
-        tracePhases.gitSearch.lastMs = elapsed;
-        if (path) tracePhases.gitSearch.details.push(path);
+        if (locator) references.push({ locator, description: `파일 읽기: ${path}` });
+        push({ event: "trace", data: { label: "저장소 탐색", detail: path || undefined, elapsedMs: elapsed } });
       } else if (
         toolName.includes("searchCode") ||
         toolName.includes("search_code") ||
         toolName.includes("listFiles") ||
         toolName.includes("list_files")
       ) {
-        tracePhases.gitSearch.count++;
-        tracePhases.gitSearch.lastMs = elapsed;
-        const pattern = String(toolInput.pattern ?? "");
-        if (pattern) tracePhases.gitSearch.details.push(pattern);
+        const pattern = String(toolInput.pattern ?? toolInput.query ?? "");
+        push({ event: "trace", data: { label: "저장소 탐색", detail: pattern || undefined, elapsedMs: elapsed } });
       }
 
-      // DB 도구
-      if (
-        toolName.includes("executeQuery") ||
-        toolName.includes("execute_query")
-      ) {
+      if (toolName.includes("executeQuery") || toolName.includes("execute_query")) {
         dbQueries++;
         const table = String(toolInput.table ?? "");
-        if (table) {
-          references.push({ locator: table, description: `DB 조회: ${table}` });
-        }
-        tracePhases.dbQuery.count++;
-        tracePhases.dbQuery.lastMs = elapsed;
-        if (table) tracePhases.dbQuery.details.push(table);
+        if (table) references.push({ locator: table, description: `DB 조회: ${table}` });
+        push({ event: "trace", data: { label: "DB 조회", detail: table || undefined, elapsedMs: elapsed } });
       } else if (
         toolName.includes("describeTable") ||
         toolName.includes("describe_table") ||
         toolName.includes("listTables") ||
         toolName.includes("list_tables")
       ) {
-        tracePhases.dbQuery.count++;
-        tracePhases.dbQuery.lastMs = elapsed;
+        push({ event: "trace", data: { label: "DB 조회", elapsedMs: elapsed } });
       }
 
       return {};
     };
 
     // ── 프롬프트 구성 ─────────────────────────────────────
+    // agentSessionId가 있으면 resume (되묻기 응답 or follow-up 모두 해당)
+    const isResume = !!(session?.agentSessionId);
     let prompt: string;
-    const isResume = !!(req.sessionId && req.answers);
 
-    if (isResume && req.answers) {
+    if (req.answers && Object.keys(req.answers).length > 0) {
+      // 되묻기에 대한 답변
       const answerLines = Object.entries(req.answers)
         .map(([q, a]) => `  - "${q}" → ${a}`)
         .join("\n");
       prompt = `이전에 요청한 추가 정보에 대한 사용자 응답:\n${answerLines}\n\n원래 질문을 계속 분석해주세요.`;
     } else {
+      // 신규 질문 또는 follow-up
       prompt = req.question;
     }
 
@@ -288,7 +283,10 @@ export class AgentRunner {
     const erpGitCmd = buildMcpCommand("src/mcp-servers/erp-git/index.ts");
     const erpDbCmd = buildMcpCommand("src/mcp-servers/erp-db/index.ts");
 
-    const mcpServers: Record<string, { command: string; args: string[]; env?: Record<string, string> }> = {};
+    const mcpServers: Record<
+      string,
+      { command: string; args: string[]; env?: Record<string, string> }
+    > = {};
 
     if (process.env.HANWHA_ERP_GIT_URL) {
       mcpServers["erp-git"] = {
@@ -311,173 +309,134 @@ export class AgentRunner {
       };
     }
 
-    // ── Agent SDK 실행 ────────────────────────────────────
-    let agentSessionId: string | undefined;
-    let finalAnswer = "";
-    let agentFailed = false;
-    let agentError = "";
-    let totalTokens = 0;
+    // ── 에이전트 백그라운드 실행 ──────────────────────────
+    const runAgent = async () => {
+      let agentGen: ReturnType<typeof query> | null = null;
+      let agentSessionId: string | undefined;
+      let finalAnswer = "";
 
-    const queryOptions: Parameters<typeof query>[0] = {
-      prompt,
-      options: {
-        systemPrompt: buildSystemPrompt(req.memberId),
-        model: env.claudeModel,
-        mcpServers: {
-          ...mcpServers,
-          "musing-core": customServer,
-        },
-        allowedTools: [
-          // 커스텀 인프로세스 도구
-          "mcp__musing-core__set_query_type",
-          "mcp__musing-core__request_clarification",
-          // ERP Git 도구
-          "mcp__erp-git__listFiles",
-          "mcp__erp-git__searchCode",
-          "mcp__erp-git__readFileRange",
-          // ERP DB 도구
-          "mcp__erp-db__listTables",
-          "mcp__erp-db__describeTable",
-          "mcp__erp-db__executeQuery",
-        ],
-        maxTurns: env.claudeMaxToolLoops + 1,
-        hooks: {
-          PostToolUse: [{ matcher: ".*", hooks: [trackToolUse] }],
-        },
-        ...(isResume && session?.agentSessionId
-          ? { resume: session.agentSessionId }
-          : {}),
-      },
-    };
+      try {
+        const queryOptions: Parameters<typeof query>[0] = {
+          prompt,
+          options: {
+            systemPrompt: buildSystemPrompt(req.memberId),
+            model: env.claudeModel,
+            mcpServers: {
+              ...mcpServers,
+              "musing-core": customServer,
+            },
+            allowedTools: [
+              "mcp__musing-core__set_query_type",
+              "mcp__musing-core__request_clarification",
+              "mcp__erp-git__listFiles",
+              "mcp__erp-git__searchCode",
+              "mcp__erp-git__readFileRange",
+              "mcp__erp-db__listTables",
+              "mcp__erp-db__describeTable",
+              "mcp__erp-db__executeQuery",
+            ],
+            maxTurns: env.claudeMaxToolLoops + 1,
+            hooks: {
+              PostToolUse: [{ matcher: ".*", hooks: [trackToolUse] }],
+            },
+            ...(isResume && session?.agentSessionId
+              ? { resume: session.agentSessionId }
+              : {}),
+          },
+        };
 
-    const gen = query(queryOptions);
+        agentGen = query(queryOptions);
+        // 취소 지원: agentGen을 sessionStore에 등록
+        this.sessionStore.registerRequest(req.requestId, agentGen as AsyncGenerator<unknown>);
 
-    // 제너레이터를 sessionStore에 등록 (취소 지원)
-    this.sessionStore.registerRequest(req.requestId, gen as AsyncGenerator<unknown>);
+        for await (const message of agentGen) {
+          if (message && typeof message === "object") {
+            // Agent SDK 세션 ID 캡처 (resume에 사용)
+            if (
+              "type" in message &&
+              (message as { type: string }).type === "system" &&
+              "subtype" in message &&
+              (message as { subtype: string }).subtype === "init" &&
+              "session_id" in message
+            ) {
+              agentSessionId = String((message as { session_id: string }).session_id);
+            }
 
-    try {
-      for await (const message of gen) {
-        // init: Agent SDK 세션 ID 캡처
-        if (
-          message &&
-          typeof message === "object" &&
-          "type" in message &&
-          (message as { type: string }).type === "system" &&
-          "subtype" in message &&
-          (message as { subtype: string }).subtype === "init" &&
-          "session_id" in message
-        ) {
-          agentSessionId = String((message as { session_id: string }).session_id);
-        }
+            // 최종 답변 캡처
+            if ("result" in message) {
+              finalAnswer = String((message as { result: string }).result);
+            }
 
-        // 최종 결과 캡처
-        if (message && typeof message === "object" && "result" in message) {
-          finalAnswer = String((message as { result: string }).result);
-        }
-
-        // 토큰 사용량 집계
-        if (message && typeof message === "object" && "usage" in message) {
-          const u = (message as {
-            usage?: { input_tokens?: number; output_tokens?: number };
-          }).usage;
-          if (u) {
-            totalTokens += (u.input_tokens ?? 0) + (u.output_tokens ?? 0);
+            // 토큰 집계
+            if ("usage" in message) {
+              const u = (
+                message as { usage?: { input_tokens?: number; output_tokens?: number } }
+              ).usage;
+              if (u) totalTokens += (u.input_tokens ?? 0) + (u.output_tokens ?? 0);
+            }
           }
         }
+
+        // 세션 agentSessionId 저장 (다음 turn에 resume용)
+        if (agentSessionId) {
+          this.sessionStore.updateSession(sessionId, { agentSessionId });
+        }
+
+        // 최종 이벤트 emit
+        if (pendingClarification) {
+          this.sessionStore.updateSession(sessionId, {
+            status: "waiting_input",
+            queryType,
+            pendingQuestions: pendingClarification,
+          });
+          push({
+            event: "clarification",
+            data: { questions: pendingClarification, type: queryType },
+          });
+        } else {
+          this.sessionStore.updateSession(sessionId, { status: "done", queryType });
+          push({
+            event: "done",
+            data: {
+              answer: finalAnswer || "답변을 생성하지 못했습니다.",
+              references,
+              type: queryType,
+              usage: {
+                elapsedMs: Date.now() - startMs,
+                tokens: totalTokens || undefined,
+                filesRead,
+                dbQueries,
+              },
+            },
+          });
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        this.sessionStore.updateSession(sessionId, { status: "failed" });
+        push({ event: "error", data: { sessionId, error: errorMsg } });
+      } finally {
+        this.sessionStore.completeRequest(req.requestId);
+        push(null); // 스트림 종료 신호
       }
-    } catch (err) {
-      agentFailed = true;
-      agentError = err instanceof Error ? err.message : String(err);
-    } finally {
-      this.sessionStore.completeRequest(req.requestId);
-    }
-
-    // ── trace 조립 ────────────────────────────────────────
-    const totalElapsed = Date.now() - startMs;
-    const trace: TraceEntry[] = [];
-
-    if (tracePhases.classify) {
-      trace.push(tracePhases.classify);
-    } else if (queryType) {
-      trace.push({
-        label: "유형 판별",
-        detail: queryType === "LOGIC_REVIEW" ? "로직 문의" : "오류 원인 확인",
-        elapsedMs: 0,
-      });
-    }
-
-    if (tracePhases.gitSearch.count > 0) {
-      trace.push({
-        label: "저장소 탐색",
-        detail: `${tracePhases.gitSearch.count}개 파일`,
-        elapsedMs: tracePhases.gitSearch.lastMs,
-      });
-    }
-
-    if (tracePhases.dbQuery.count > 0) {
-      trace.push({
-        label: "DB 조회",
-        detail: `${tracePhases.dbQuery.count}건`,
-        elapsedMs: tracePhases.dbQuery.lastMs,
-      });
-    }
-
-    if (!agentFailed && !pendingClarification) {
-      trace.push({ label: "응답 작성", elapsedMs: totalElapsed });
-    }
-
-    // ── 세션 상태 업데이트 ────────────────────────────────
-    if (agentSessionId) {
-      this.sessionStore.updateSession(sessionId, { agentSessionId });
-    }
-
-    // ── 결과 반환 ─────────────────────────────────────────
-
-    if (agentFailed) {
-      this.sessionStore.updateSession(sessionId, { status: "failed" });
-      return {
-        status: "failed",
-        sessionId,
-        type: queryType,
-        trace,
-        error: agentError,
-      };
-    }
-
-    if (pendingClarification) {
-      this.sessionStore.updateSession(sessionId, {
-        status: "waiting_input",
-        queryType,
-        pendingQuestions: pendingClarification,
-        pendingTrace: trace,
-      });
-      return {
-        status: "waiting_input",
-        sessionId,
-        type: queryType,
-        questions: pendingClarification,
-        trace,
-      };
-    }
-
-    this.sessionStore.updateSession(sessionId, {
-      status: "done",
-      queryType,
-    });
-
-    return {
-      status: "done",
-      sessionId,
-      type: queryType,
-      answer: finalAnswer || "답변을 생성하지 못했습니다.",
-      references,
-      trace,
-      usage: {
-        elapsedMs: totalElapsed,
-        tokens: totalTokens || undefined,
-        filesRead,
-        dbQueries,
-      },
     };
+
+    // 백그라운드 실행 (await 없음 — 이벤트 큐로 통신)
+    runAgent();
+
+    // ── 이벤트 큐 → yield ─────────────────────────────────
+    try {
+      while (true) {
+        if (queue.length === 0) {
+          await new Promise<void>((r) => {
+            waitResolve = r;
+          });
+        }
+        const event = queue.shift()!;
+        if (event === null) break;
+        yield event;
+      }
+    } finally {
+      cancelled = true; // 클라이언트 연결 끊김 시 push 차단
+    }
   }
 }
