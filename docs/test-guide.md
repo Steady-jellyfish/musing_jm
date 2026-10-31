@@ -1,283 +1,371 @@
-# API 로컬 테스트 가이드
+# 테스트 가이드
 
-> 이 문서대로만 따라하면 됩니다. 순서대로 진행하세요.
+> 이 문서 순서대로만 따라오면 됩니다.  
+> 한 번 세팅하면 이후 시나리오는 복붙으로 바로 실행 가능합니다.
 
 ---
 
-## STEP 1. 패키지 설치
+## 준비물
 
-PowerShell에서 프로젝트 폴더로 이동 후 실행합니다.
+- PowerShell (Windows 기본 내장)
+- 서버가 실행 중일 것 (STEP 1 참고)
+
+---
+
+## STEP 1. 서버 실행
+
+**PowerShell 창 하나를 열고** 아래 실행:
 
 ```powershell
 cd C:\00_Project\02_Business\00_Project\musing_jm
-npm install
-```
-
-완료 메시지 예시:
-```
-added 123 packages in 5s
-```
-
-에러 없이 끝나면 다음 단계로 넘어갑니다.
-
----
-
-## STEP 2. 서버 실행
-
-```powershell
 npm run dev
 ```
 
-아래처럼 출력되면 정상입니다.
+이렇게 뜨면 정상:
 
 ```
-{"level":"info","msg":"Server listening at http://[::1]:3000"}
 {"level":"info","msg":"Server listening at http://127.0.0.1:3000"}
 ```
 
-> 이 터미널은 계속 켜두세요. 서버가 살아있는 동안만 요청을 처리합니다.
+> ⚠️ 이 터미널은 계속 켜둬야 합니다. 닫으면 서버도 꺼집니다.
 
 ---
 
-## STEP 3. 서버 상태 확인
+## STEP 2. 서버 상태 확인
 
-**새 PowerShell 창을 열고** 아래를 실행합니다.
+**새 PowerShell 창을 열고** 아래 실행:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:3000/health" -Method GET
+Invoke-RestMethod -Uri "http://localhost:3000/health"
 ```
 
 정상 응답:
+
 ```
 ok      : True
 running : 0
 queued  : 0
 ```
 
-이게 나오면 서버가 정상 기동된 겁니다.
-
 ---
 
-## STEP 4. 질의 처리 테스트 (`/process`)
+## STEP 3. 헬퍼 함수 등록 (딱 한 번만)
 
-### 4-1. 기본 질문 보내기
+> 이 프로젝트는 **SSE 스트림** 방식으로 응답합니다.  
+> 일반 요청과 달리 응답이 실시간으로 조금씩 흘러옵니다.  
+> 아래 함수를 등록하면 이걸 읽기 쉽게 출력해줍니다.
 
-아래를 **한 번에 복사해서 실행**합니다.
+**새 PowerShell 창에서 아래를 한 번에 복붙해서 실행:**
 
 ```powershell
-$body = @{
-    question  = "지사수수료계가 0원입니다. 왜 그런가요?"
-    memberId  = "hll"
-    requestId = "test-001"
-} | ConvertTo-Json -Compress
+function Invoke-SSE {
+    param(
+        [string]$Body,
+        [switch]$Verbose
+    )
 
-Invoke-RestMethod -Uri "http://localhost:3000/process" `
-    -Method POST `
-    -ContentType "application/json" `
-    -Body $body
-```
+    $req = [System.Net.HttpWebRequest]::Create("http://localhost:3000/process")
+    $req.Method = "POST"
+    $req.ContentType = "application/json"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
+    $req.ContentLength = $bytes.Length
+    $s = $req.GetRequestStream()
+    $s.Write($bytes, 0, $bytes.Length)
+    $s.Close()
 
-응답이 오는 데 **10~30초 정도** 걸립니다. Claude가 코드/DB를 분석하는 시간입니다.
+    $res = $req.GetResponse()
+    $reader = New-Object System.IO.StreamReader($res.GetResponseStream())
 
----
+    $sessionId = ""
+    $lastEvent = ""
 
-### 응답 결과 해석
+    while (-not $reader.EndOfStream) {
+        $line = $reader.ReadLine()
+        if ($line.StartsWith("event:")) {
+            $lastEvent = $line.Substring(6).Trim()
+        }
+        elseif ($line.StartsWith("data:")) {
+            $json = $line.Substring(5).Trim() | ConvertFrom-Json
 
-#### 정상 응답 (`status: done`)
-
-```
-status     : done
-sessionId  : xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-type       : ERROR_CAUSE
-answer     : 지급규정 개정이 원인입니다. ...
-references : {@{locator=PKG_SU_CALC:412; description=...}, ...}
-trace      : {@{label=유형 판별; elapsedMs=400}, ...}
-usage      : @{elapsedMs=12000; tokens=8500; filesRead=3; dbQueries=2}
-```
-
-- `sessionId` → 이 값을 메모해두세요. 되묻기 응답 시 필요합니다.
-- `type` → Claude가 판단한 질문 유형 (`LOGIC_REVIEW` 또는 `ERROR_CAUSE`)
-- `answer` → 실제 분석 결과
-- `usage.tokens` → 이번 요청에 사용된 토큰 수 (비용 추적용)
-
----
-
-#### 되묻기 응답 (`status: waiting_input`)
-
-질문이 모호하면 Claude가 추가 정보를 요청합니다.
-
-```
-status    : waiting_input
-sessionId : xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-questions : {@{question=어느 기준으로 조회한 결과인가요?; options=...}}
-```
-
-이 경우 **4-2**로 이어서 진행합니다.
-
----
-
-#### 실패 응답 (`status: failed`)
-
-```
-status : failed
-error  : 저장소 접근 중 타임아웃이 발생했습니다
-```
-
-원인은 아래 **STEP 7. 문제 해결** 참고하세요.
-
----
-
-### 4-2. 되묻기 응답 보내기 (waiting_input 이후)
-
-`waiting_input` 응답을 받은 경우에만 실행합니다.  
-`sessionId` 부분을 **4-1에서 받은 실제 값으로 교체**하고 실행합니다.
-
-```powershell
-$body2 = @{
-    question  = "지사수수료계가 0원입니다. 왜 그런가요?"
-    memberId  = "hll"
-    sessionId = "여기에-4-1-응답의-sessionId-붙여넣기"
-    requestId = "test-002"
-    answers   = @{
-        "어느 기준으로 조회한 결과인가요?" = "지사 소계"
+            switch ($lastEvent) {
+                "connected" {
+                    $sessionId = $json.sessionId
+                    Write-Host ""
+                    Write-Host "[ 연결됨 ] sessionId: $($json.sessionId)" -ForegroundColor DarkGray
+                }
+                "trace" {
+                    Write-Host "  > $($json.label)" -NoNewline -ForegroundColor DarkYellow
+                    if ($json.detail) { Write-Host ": $($json.detail)" -NoNewline -ForegroundColor DarkGray }
+                    Write-Host " ($($json.elapsedMs)ms)" -ForegroundColor DarkGray
+                }
+                "clarification" {
+                    Write-Host ""
+                    Write-Host "[ 되묻기 ] Claude가 추가 정보를 요청합니다:" -ForegroundColor Magenta
+                    $json.questions | ForEach-Object {
+                        Write-Host "  질문: $($_.question)" -ForegroundColor Magenta
+                        $_.options | ForEach-Object {
+                            Write-Host "    - $($_.label): $($_.description)" -ForegroundColor DarkMagenta
+                        }
+                    }
+                    Write-Host ""
+                    Write-Host "  → answers 에 선택한 라벨을 담아 재요청하세요." -ForegroundColor DarkGray
+                }
+                "done" {
+                    Write-Host ""
+                    Write-Host "[ 답변 완료 ]" -ForegroundColor Green
+                    Write-Host $json.answer -ForegroundColor White
+                    if ($json.references -and $json.references.Count -gt 0) {
+                        Write-Host ""
+                        Write-Host "[ 참조 ]" -ForegroundColor DarkGreen
+                        $json.references | ForEach-Object {
+                            Write-Host "  $($_.locator)" -ForegroundColor DarkGray
+                        }
+                    }
+                    if ($json.usage) {
+                        Write-Host ""
+                        Write-Host "[ 사용량 ] $($json.usage.elapsedMs)ms | 토큰: $($json.usage.tokens) | 파일: $($json.usage.filesRead) | DB: $($json.usage.dbQueries)" -ForegroundColor DarkGray
+                    }
+                }
+                "error" {
+                    Write-Host ""
+                    Write-Host "[ 오류 ] $($json.error)" -ForegroundColor Red
+                }
+            }
+        }
     }
-} | ConvertTo-Json -Compress
-
-Invoke-RestMethod -Uri "http://localhost:3000/process" `
-    -Method POST `
-    -ContentType "application/json" `
-    -Body $body2
-```
-
-> `requestId`는 반드시 새 값(`test-002`)으로 바꿔야 합니다. 같은 값을 쓰면 중복 요청으로 차단됩니다.
-
----
-
-## STEP 5. 취소 테스트 (`/cancel`)
-
-처리 중인 요청을 취소하고 싶을 때 사용합니다.
-
-### 5-1. 취소할 요청 먼저 백그라운드로 실행
-
-```powershell
-$cancelTestBody = @{
-    question  = "전체 수수료 계산 로직을 처음부터 끝까지 모두 설명해주세요"
-    memberId  = "hll"
-    requestId = "cancel-test-001"
-} | ConvertTo-Json -Compress
-
-# 백그라운드로 실행 (응답 안 기다림)
-Start-Job -ScriptBlock {
-    Invoke-RestMethod -Uri "http://localhost:3000/process" `
-        -Method POST `
-        -ContentType "application/json" `
-        -Body $using:cancelTestBody
+    $reader.Close()
+    return $sessionId
 }
 ```
 
-### 5-2. 바로 취소 요청
+실행하면 아무 출력 없이 넘어갑니다. 정상입니다.
+
+---
+
+## STEP 4. 테스트 시나리오
+
+> `$sid` 변수에 sessionId가 자동 저장되므로 두 번째 질문부터는 그냥 복붙만 하면 됩니다.
+
+---
+
+### 시나리오 1 — 수수료 오류 원인 찾기 (되묻기 포함)
+
+**이런 상황:** 지사수수료가 0원으로 나올 때 원인을 찾는 시나리오.  
+Claude가 정보가 부족하면 되묻기를 할 수 있습니다.
+
+**1번 질문:**
 
 ```powershell
-$cancelBody = @{
-    requestId = "cancel-test-001"
-} | ConvertTo-Json -Compress
-
-Invoke-RestMethod -Uri "http://localhost:3000/cancel" `
-    -Method POST `
-    -ContentType "application/json" `
-    -Body $cancelBody
+$sid = Invoke-SSE -Body '{
+  "question":  "지사수수료계가 0원으로 표시되고 있습니다. 왜 그런가요?",
+  "memberId":  "hll",
+  "requestId": "s1-001"
+}'
 ```
 
-정상 응답:
-```
-canceled : True
-```
-
-이미 완료된 요청이면 `canceled : False`가 반환됩니다.
-
----
-
-## STEP 6. Swagger UI (브라우저)
-
-브라우저에서 아래 주소를 엽니다.
-
-```
-http://localhost:3000/docs
-```
-
-화면에서 할 수 있는 것:
-- **process** 태그 클릭 → `/process`, `/cancel`, `/health` 엔드포인트 목록
-- **Try it out** 버튼 → 요청 파라미터 직접 입력 후 실행 가능
-- 응답 스키마 확인
-
----
-
-## STEP 7. 문제 해결
-
-### 서버가 안 켜질 때
-
-**증상**: `npm run dev` 실행 시 에러 발생
+**[ 되묻기가 온 경우 ]**  
+출력에서 `[ 되묻기 ]` 가 보이면 → Claude가 제시한 선택지 중 하나를 골라서 아래 `answers` 에 입력 후 실행:
 
 ```powershell
-# API Key 확인 (값이 비어있으면 .env 수정 필요)
-Select-String -Path .env -Pattern "ANTHROPIC_API_KEY"
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"지사수수료계가 0원으로 표시되고 있습니다. 왜 그런가요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s1-002`",
+  `"answers`":   {`"어느 기간 얘기인가요?`": `"2026년 1월`"}
+}"
 ```
 
-`.env` 파일에 `ANTHROPIC_API_KEY=sk-ant-...` 값이 있어야 합니다.
+> `answers` 의 키는 Claude가 물어본 질문 텍스트, 값은 선택지 라벨로 수정하세요.
 
----
-
-### `Cannot POST /process` 에러
-
-서버가 실행 중인지 확인합니다.
+**답변이 나온 후 follow-up:**
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:3000/health"
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"수수료 계산할 때 어떤 조건이 충족되어야 금액이 채워지나요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s1-003`"
+}"
 ```
-
-응답이 없으면 `npm run dev` 실행 중인 터미널을 확인하세요.
-
----
-
-### `status: failed` — 타임아웃
-
-현재 타임아웃이 **30초**로 설정되어 있습니다.  
-복잡한 질문은 30초를 초과할 수 있습니다. `.env`에서 늘릴 수 있습니다.
-
-```
-CLAUDE_TIMEOUT_MS=60000
-```
-
-변경 후 서버 재시작 (`Ctrl+C` → `npm run dev`).
-
----
-
-### `status: failed` — 동일한 requestId
-
-재시도 시 **반드시 새 requestId**를 써야 합니다.
 
 ```powershell
-# 매번 새 ID 생성하는 방법
-$newRequestId = [System.Guid]::NewGuid().ToString()
-Write-Host "requestId: $newRequestId"
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"그 조건이 DB에서 어떤 테이블에 저장되어 있나요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s1-004`"
+}"
 ```
 
 ---
 
-### Git 저장소 / DB 없이 테스트할 때
+### 시나리오 2 — 급여 정산 로직 탐색 (3턴 연속 대화)
 
-ERP Git URL과 DB 설정이 없어도 API 자체는 동작합니다.  
-Claude가 코드/DB 없이 답변하므로 "근거를 찾을 수 없습니다" 형태로 응답합니다.
+**이런 상황:** 급여 계산 로직을 단계적으로 파고드는 시나리오.  
+매 답변 후 더 깊은 질문을 이어가며 대화 맥락이 유지되는지 확인합니다.
+
+```powershell
+$sid = Invoke-SSE -Body '{
+  "question":  "직원 월급 정산 로직이 어떻게 구현되어 있나요? settlement 쪽 코드를 봐주세요.",
+  "memberId":  "hll",
+  "requestId": "s2-001"
+}'
+```
+
+```powershell
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"정산할 때 원천징수 금액은 어떻게 계산되나요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s2-002`"
+}"
+```
+
+```powershell
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"withholding 관련 DB 테이블 구조도 알려줄 수 있어요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s2-003`"
+}"
+```
 
 ---
 
-## 빠른 참고
+### 시나리오 3 — 계약 수금 오류 (되묻기 유도)
 
-| 항목 | 값 |
-|------|---|
-| 서버 주소 | `http://localhost:3000` |
-| Swagger UI | `http://localhost:3000/docs` |
-| 현재 모델 | `claude-haiku-4-5-20251001` |
-| 타임아웃 | 30초 |
-| 최대 도구 루프 | 3회 |
-| 서버 재시작 | 서버 터미널에서 `Ctrl+C` → `npm run dev` |
+**이런 상황:** 수금 처리가 안 될 때 원인을 좁혀나가는 시나리오.  
+일부러 모호하게 질문해서 되묻기가 발생하는지 테스트합니다.
+
+```powershell
+$sid = Invoke-SSE -Body '{
+  "question":  "이번 달 수금이 안 되고 있습니다. contractsugum 쪽 문제인 것 같은데 원인을 찾아주세요.",
+  "memberId":  "hll",
+  "requestId": "s3-001"
+}'
+```
+
+되묻기 응답 후:
+
+```powershell
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"수금 처리 로직에서 실패가 나면 어떤 상태값으로 바뀌나요? 코드에서 찾아주세요.`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s3-002`"
+}"
+```
+
+---
+
+### 시나리오 4 — 실적 집계 로직 탐색 (3턴)
+
+**이런 상황:** 영업 실적 집계 방식과 보조금 지급 조건을 단계적으로 확인합니다.
+
+```powershell
+$sid = Invoke-SSE -Body '{
+  "question":  "영업 실적이 어떻게 집계되는지 performance 쪽 로직을 설명해주세요.",
+  "memberId":  "hll",
+  "requestId": "s4-001"
+}'
+```
+
+```powershell
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"실적 기준으로 보조금(subsidy)은 어떤 조건에서 지급되나요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s4-002`"
+}"
+```
+
+```powershell
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"실적이 0으로 나오는 경우는 코드에서 어떤 케이스로 처리되고 있나요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s4-003`"
+}"
+```
+
+---
+
+### 시나리오 5 — 월마감 처리 흐름 탐색 (3턴)
+
+**이런 상황:** 월마감 로직의 전체 흐름을 파악하고 배치 연관성까지 확인합니다.
+
+```powershell
+$sid = Invoke-SSE -Body '{
+  "question":  "월 마감(closemonth) 처리가 어떤 순서로 이루어지는지 코드 흐름을 설명해주세요.",
+  "memberId":  "hll",
+  "requestId": "s5-001"
+}'
+```
+
+```powershell
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"마감 처리 중에 배치 작업(taskschedule)이 연관되어 있나요? 있다면 어떻게 연결되어 있나요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s5-002`"
+}"
+```
+
+```powershell
+$sid = Invoke-SSE -Body "{
+  `"question`":  `"마감이 완료된 이후에 데이터를 수정하려고 하면 어떻게 처리되나요? 잠금 로직이 있나요?`",
+  `"memberId`":  `"hll`",
+  `"sessionId`": `"$sid`",
+  `"requestId`": `"s5-003`"
+}"
+```
+
+---
+
+## STEP 5. 출력 읽는 법
+
+```
+[ 연결됨 ] sessionId: abc-123-...     ← 이 세션ID로 대화가 이어집니다
+
+  > 유형 판별: 오류 원인 확인 (45ms)  ← Claude가 질문 유형 파악
+  > 저장소 탐색: settlement.java (1230ms)  ← 파일 뒤지는 중
+  > DB 조회: tb_settlement (3400ms)    ← DB 보는 중
+
+[ 답변 완료 ]                          ← 여기서부터 실제 답변
+매출은 sales 테이블의 amount 컬럼...
+
+[ 참조 ]                               ← Claude가 근거로 사용한 파일/테이블
+  src/main/java/kr/co/gnx/insa/settlement/...java:123
+  tb_settlement
+
+[ 사용량 ] 8400ms | 토큰: 5200 | 파일: 3 | DB: 2
+```
+
+---
+
+## STEP 6. 취소하고 싶을 때
+
+요청이 너무 오래 걸리면 다른 PowerShell 창에서:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:3000/cancel" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{"requestId": "s2-001"}'
+```
+
+> `requestId` 는 취소하고 싶은 요청의 값으로 바꾸세요.
+
+---
+
+## 문제 해결
+
+| 증상 | 원인 | 해결 |
+|------|------|------|
+| 함수 실행해도 아무것도 안 나옴 | 서버가 꺼진 것 | STEP 1로 돌아가서 서버 재시작 |
+| `Invoke-SSE` 를 모른다고 함 | STEP 3 함수 등록을 안 함 | STEP 3 복붙 후 재시도 |
+| 응답이 10초 이상 안 나옴 | Claude가 분석 중 (정상) | trace 이벤트가 흘러오면 기다리면 됨 |
+| `status: failed` — 동일 requestId | 같은 requestId 재사용 | `s2-001` → `s2-011` 처럼 숫자 바꾸기 |
+| 되묻기(clarification) 후 막힘 | answers 형식 오류 | 키 = Claude가 물어본 질문 그대로, 값 = 선택지 라벨 그대로 |
