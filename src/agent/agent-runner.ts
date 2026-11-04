@@ -41,6 +41,7 @@ export interface Reference {
 /** SSE 이벤트 유니온 타입 */
 export type SseEvent =
   | { event: "connected"; data: { sessionId: string } }
+  | { event: "token"; data: { text: string } }
   | { event: "trace"; data: TraceEntry }
   | {
       event: "clarification";
@@ -314,6 +315,8 @@ export class AgentRunner {
       let agentGen: ReturnType<typeof query> | null = null;
       let agentSessionId: string | undefined;
       let finalAnswer = "";
+      // content_block_delta 이벤트로 토큰을 이미 스트리밍했는지 추적
+      let hasStreamedTokens = false;
 
       try {
         const queryOptions: Parameters<typeof query>[0] = {
@@ -351,28 +354,60 @@ export class AgentRunner {
 
         for await (const message of agentGen) {
           if (message && typeof message === "object") {
-            // Agent SDK 세션 ID 캡처 (resume에 사용)
-            if (
-              "type" in message &&
-              (message as { type: string }).type === "system" &&
-              "subtype" in message &&
-              (message as { subtype: string }).subtype === "init" &&
-              "session_id" in message
-            ) {
-              agentSessionId = String((message as { session_id: string }).session_id);
+            const msg = message as Record<string, unknown>;
+
+            // ── Agent SDK 세션 ID 캡처 (resume에 사용) ────────
+            if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
+              agentSessionId = String(msg.session_id);
             }
 
-            // 최종 답변 캡처
-            if ("result" in message) {
-              finalAnswer = String((message as { result: string }).result);
+            // ── [1순위] content_block_delta: 토큰 단위 실시간 스트리밍 ──
+            // Agent SDK가 Claude API의 스트리밍 이벤트를 그대로 노출할 때 도달합니다.
+            if (msg.type === "content_block_delta") {
+              const delta = msg.delta as Record<string, unknown> | undefined;
+              if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text) {
+                finalAnswer += delta.text;
+                hasStreamedTokens = true;
+                push({ event: "token", data: { text: delta.text } });
+              }
             }
 
-            // 토큰 집계
-            if ("usage" in message) {
-              const u = (
-                message as { usage?: { input_tokens?: number; output_tokens?: number } }
-              ).usage;
-              if (u) totalTokens += (u.input_tokens ?? 0) + (u.output_tokens ?? 0);
+            // ── [2순위] assistant 완성 메시지 fallback ────────
+            // content_block_delta가 없는 SDK 버전에서는 완성된 메시지 블록을 통째로 emit합니다.
+            if (msg.type === "assistant" && !hasStreamedTokens) {
+              const assistantMsg = msg.message as
+                | { content?: Array<{ type: string; text?: string }> }
+                | undefined;
+              if (assistantMsg?.content) {
+                for (const block of assistantMsg.content) {
+                  if (block.type === "text" && typeof block.text === "string" && block.text) {
+                    finalAnswer += block.text;
+                    hasStreamedTokens = true;
+                    push({ event: "token", data: { text: block.text } });
+                  }
+                }
+              }
+            }
+
+            // ── [3순위] result 필드 fallback ─────────────────
+            // 위 두 경로 모두에서 텍스트를 얻지 못했을 때만 사용합니다.
+            if ("result" in msg) {
+              if (!hasStreamedTokens) {
+                finalAnswer = String(msg.result);
+                if (finalAnswer) {
+                  hasStreamedTokens = true;
+                  push({ event: "token", data: { text: finalAnswer } });
+                }
+              } else if (!finalAnswer) {
+                // 토큰은 스트리밍됐지만 누락된 경우 보정
+                finalAnswer = String(msg.result);
+              }
+            }
+
+            // ── 토큰 집계 ─────────────────────────────────────
+            if (msg.usage) {
+              const u = msg.usage as { input_tokens?: number; output_tokens?: number };
+              totalTokens += (u.input_tokens ?? 0) + (u.output_tokens ?? 0);
             }
           }
         }

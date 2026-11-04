@@ -55,9 +55,10 @@ export async function processRoutes(app: FastifyInstance): Promise<void> {
           "자연어 질문을 처리하고 결과를 SSE 이벤트 스트림으로 반환합니다.\n\n" +
           "**이벤트 타입**\n" +
           "- `connected`: 세션 시작. `{ sessionId }` 포함\n" +
+          "- `token`: Claude 답변 토큰 실시간 전달. `{ text }` 포함. 순서대로 이어 붙이면 전체 답변이 됩니다\n" +
           "- `trace`: 처리 단계 실시간 알림. `{ label, detail?, elapsedMs }` 포함\n" +
           "- `clarification`: 추가 정보 필요. `{ questions, type? }` 포함. answers와 함께 재요청하세요\n" +
-          "- `done`: 분석 완료. `{ answer, references, type?, usage }` 포함\n" +
+          "- `done`: 분석 완료. `{ answer, references, type?, usage }` 포함. answer는 모든 token을 이어 붙인 전체 답변입니다\n" +
           "- `error`: 처리 실패. `{ sessionId, error }` 포함\n\n" +
           "**채팅 연속 대화**: done 이후에도 같은 sessionId로 다음 질문을 보내면 맥락이 유지됩니다.",
         tags: ["process"],
