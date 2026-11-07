@@ -1,4 +1,4 @@
-# musing_jm
+# musing-sonar
 
 한화라이프랩 ERP **로직 확인 / 사유 확인** 문의를 처리하는 백엔드 서버입니다.  
 Gateway로부터 정제된 문의를 HTTP로 수신하고, Claude API와 ERP 전용 MCP 도구를 통해 ERP Git 소스·MariaDB를 실제로 조회한 뒤 근거 있는 답변을 반환합니다.
@@ -10,7 +10,7 @@ Front-end
     ↓ 자연어 문의
 Gateway (1차 필터링 — 별도 프로젝트)
     ↓ POST /api/v1/inquiry  (정제된 구조화 데이터)
-musing_jm (본 저장소)
+musing-sonar (본 저장소)
     ├─ 2차 가공: memberId+targetSystem → 저장소 결정, queryType 검증, 권한 확인
     ├─ Claude API + tool_use 루프
     │     ├─ erp-git MCP: ERP Git 소스 탐색/읽기 (URL 기반 자동 동기화)

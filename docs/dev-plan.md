@@ -1,4 +1,4 @@
-# musing_jm 개발 계획서
+# musing-sonar 개발 계획서
 
 > Front API 스펙 기준 | 작성일: 2026-10-18
 

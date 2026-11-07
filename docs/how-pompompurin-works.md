@@ -52,7 +52,7 @@ Fastify 내부 동작:
 async () => {
   return {
     message: "Yes",
-    from: "musing_jm",
+    from: "musing-sonar",
     timestamp: new Date().toISOString(),   // 현재 시각
   };
 }
@@ -78,7 +78,7 @@ Fastify는 핸들러가 **객체를 return**하면 자동으로:
 ### 5단계. 브라우저가 JSON을 화면에 표시
 
 ```json
-{"message":"Yes","from":"musing_jm","timestamp":"2026-09-28T09:00:00.000Z"}
+{"message":"Yes","from":"musing-sonar","timestamp":"2026-09-28T09:00:00.000Z"}
 ```
 
 브라우저는 `Content-Type: application/json`을 보고 JSON 텍스트를 그대로 화면에 렌더링합니다.

@@ -1,4 +1,4 @@
-_# musing_jm API 명세서
+_# musing-sonar API 명세서
 
 > Base URL: `http://localhost:3000` (로컬) / 운영 URL은 배포 후 교체  
 > 인증: 없음 (회원사 구분은 요청 본문의 `memberId`로 처리)  

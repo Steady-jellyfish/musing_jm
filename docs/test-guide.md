@@ -17,7 +17,7 @@
 **PowerShell 창 하나를 열고** 아래 실행:
 
 ```powershell
-cd C:\00_Project\02_Business\00_Project\musing_jm
+cd C:\00_Project\02_Business\00_Project\musing-sonar
 npm run dev
 ```
 

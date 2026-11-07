@@ -1,4 +1,4 @@
-# Notion 문서 생성 규칙 — musing_jm 프로젝트
+# Notion 문서 생성 규칙 — musing-sonar 프로젝트
 
 이 프로젝트에서 Notion 문서 생성 요청이 들어오면 아래 기본값을 항상 적용한다.
 

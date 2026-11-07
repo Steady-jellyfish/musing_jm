@@ -1,4 +1,4 @@
-# musing_jm — 프로젝트 전체 구조 및 동작 흐름
+# musing-sonar — 프로젝트 전체 구조 및 동작 흐름
 
 > 한화라이프랩 ERP 시스템의 **로직·사유 확인 문의를 처리하는 AI 미들웨어 백엔드**
 
@@ -6,7 +6,7 @@
 
 ## 1. 프로젝트 개요
 
-**musing_jm**은 사용자의 자연어 질문을 받아서 Claude AI가 ERP Git 저장소와 MariaDB를 직접 조회하고, 근거 있는 답변을 생성하는 오케스트레이션 서버입니다.
+**musing-sonar**은 사용자의 자연어 질문을 받아서 Claude AI가 ERP Git 저장소와 MariaDB를 직접 조회하고, 근거 있는 답변을 생성하는 오케스트레이션 서버입니다.
 
 ### 핵심 가치
 
@@ -32,7 +32,7 @@
 ## 2. 디렉토리 구조
 
 ```
-musing_jm/
+musing-sonar/
 ├── config/
 │   └── repos.json              # 회원사 ID × 시스템 → Git 저장소 매핑
 ├── docs/                       # 세부 기술 문서 (12개)
@@ -87,7 +87,7 @@ musing_jm/
 └────────────────────┬────────────────────────────────────┘
                      │  HTTP 요청
          ┌───────────▼───────────┐
-         │      musing_jm        │
+         │      musing-sonar        │
          │   Fastify HTTP Server │
          │     :3000             │
          └───┬───────────────┬───┘
@@ -129,7 +129,7 @@ musing_jm/
 ### 4-A. 신규 경로: `POST /process` (SSE 스트림)
 
 ```
-클라이언트                    musing_jm                     Claude + MCP
+클라이언트                    musing-sonar                     Claude + MCP
     │                            │                               │
     │── POST /process ──────────>│                               │
     │                            │ 세션 생성 (sessionId)          │

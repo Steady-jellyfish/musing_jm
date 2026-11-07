@@ -1,5 +1,5 @@
 {
-  "name": "musing_jm",
+  "name": "musing-sonar",
   "version": "0.1.0",
   "description": "자연어 가공 및 MCP 오케스트레이션 미들웨어",
   "type": "module",
@@ -37,12 +37,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Steady-jellyfish/musing_jm.git"
+    "url": "git+https://github.com/Steady-jellyfish/musing-sonar.git"
   },
   "author": "김지민",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Steady-jellyfish/musing_jm/issues"
+    "url": "https://github.com/Steady-jellyfish/musing-sonar/issues"
   },
-  "homepage": "https://github.com/Steady-jellyfish/musing_jm#readme"
+  "homepage": "https://github.com/Steady-jellyfish/musing-sonar#readme"
 }

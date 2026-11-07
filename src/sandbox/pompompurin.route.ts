@@ -3,7 +3,7 @@ import { Type } from "@sinclair/typebox";
 
 const PompompurinResponse = Type.Object({
   message: Type.Literal("Yes"),
-  from: Type.Literal("musing_jm"),
+  from: Type.Literal("musing-sonar"),
   timestamp: Type.String({ format: "date-time" }),
 });
 
@@ -17,7 +17,7 @@ export const sandboxRoutes: FastifyPluginAsync = async (app) => {
   }, async () => {
     return {
       message: "Yes" as const,
-      from: "musing_jm" as const,
+      from: "musing-sonar" as const,
       timestamp: new Date().toISOString(),
     };
   });
