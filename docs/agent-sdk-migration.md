@@ -2,7 +2,7 @@
 
 ## 개요
 
-이 문서는 `musing_jm` 프로젝트를 **Anthropic SDK 직접 호출 방식**에서  
+이 문서는 `musing-sonar` 프로젝트를 **Anthropic SDK 직접 호출 방식**에서  
 **`@anthropic-ai/claude-agent-sdk` 방식**으로 전환한 내용을 설명합니다.
 
 ---

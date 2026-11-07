@@ -37,12 +37,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Steady-jellyfish/musing_sonar.git"
+    "url": "git+https://github.com/Steady-jellyfish/musing-sonar.git"
   },
   "author": "김지민",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Steady-jellyfish/musing_sonar/issues"
+    "url": "https://github.com/Steady-jellyfish/musing-sonar/issues"
   },
-  "homepage": "https://github.com/Steady-jellyfish/musing_sonar#readme"
+  "homepage": "https://github.com/Steady-jellyfish/musing-sonar#readme"
 }

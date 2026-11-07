@@ -71,7 +71,7 @@ npm run dev
 
 정상 기동 시 출력:
 ```
-INFO [server] musing_jm API listening at http://localhost:3000
+INFO [server] musing-sonar API listening at http://localhost:3000
 INFO [server] Swagger UI: http://localhost:3000/docs
 ```
 

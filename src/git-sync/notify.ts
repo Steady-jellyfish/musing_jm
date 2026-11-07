@@ -27,7 +27,7 @@ export async function notify(
   //   await fetch(process.env.SLACK_WEBHOOK_URL, {
   //     method: "POST",
   //     headers: { "Content-Type": "application/json" },
-  //     body: JSON.stringify({ text: `[musing_jm] ${event}: ${JSON.stringify(details)}` }),
+  //     body: JSON.stringify({ text: `[musing-sonar] ${event}: ${JSON.stringify(details)}` }),
   //   });
   // }
 }

@@ -20,7 +20,7 @@ export async function buildApp() {
   await app.register(swagger, {
     openapi: {
       info: {
-        title: "musing_jm API",
+        title: "musing-sonar API",
         description: "한화라이프랩 ERP 문의 처리 백엔드 (로직 확인 / 사유 확인)",
         version: "0.1.0",
       },
